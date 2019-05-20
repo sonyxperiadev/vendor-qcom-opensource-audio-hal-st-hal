@@ -134,10 +134,6 @@ static bool is_projected_lpi_budget_available
      * 2. Upto 2 sessions with single keyword each
      */
 
-    /* If this param is set from xml, ignore the budgeting requirements */
-    if (stdev->disable_lpi_budget)
-        return true;
-
     /* first check current session for LPI criteria if st_ses is available */
     ses_lpi_cost = st_ses ? get_session_lpi_cost(st_ses) : 0;
     if (ses_lpi_cost > max_lpi_budget_available) {
@@ -182,8 +178,19 @@ bool st_hw_check_lpi_support
     st_session_t *st_ses
 )
 {
-    if (st_ses && !st_ses->vendor_uuid_info->lpi_enable) {
-        ALOGV("%s: no check required, lpi NOT enabled for ses", __func__);
+    st_session_t *ses = NULL;
+    struct listnode *ses_node = NULL;
+
+    /*
+     * ST_PLATFORM_LPI_NONE is used for backward compatibility. With this
+     * setting, the st_vendor_uuid->lpi_enable flag will be used.
+     */
+    if (stdev->platform_lpi_enable == ST_PLATFORM_LPI_DISABLE) {
+        ALOGD("%s: lpi NOT enabled in platform setting", __func__);
+        return false;
+    } else if ((stdev->platform_lpi_enable == ST_PLATFORM_LPI_NONE) &&
+               st_ses && !st_ses->vendor_uuid_info->lpi_enable) {
+        ALOGD("%s: lpi NOT enabled for ses %d", __func__, st_ses->sm_handle);
         return false;
     }
 
@@ -192,17 +199,28 @@ bool st_hw_check_lpi_support
         return false;
     }
 
-    if ((stdev->is_charging &&
-         stdev->transit_to_non_lpi_on_battery_charging) ||
-        (st_ses->hw_ses_current->client_req_det_mode ==
-            ST_HW_SESS_DET_HIGH_PERF_MODE)) {
-        ALOGD("%s: lpi NOT supported. perf mode %d, battery status %d",
-            __func__, st_ses->hw_ses_current->client_req_det_mode,
+    if (stdev->is_charging &&
+        stdev->transit_to_non_lpi_on_battery_charging) {
+        ALOGD("%s: lpi NOT supported. battery status %d", __func__,
             stdev->is_charging);
         return false;
     }
 
-    return is_projected_lpi_budget_available(stdev, st_ses);
+    list_for_each(ses_node, &stdev->sound_model_list) {
+        ses = node_to_item(ses_node, st_session_t, list_node);
+
+        if (ses->hw_ses_current->client_req_det_mode ==
+            ST_HW_SESS_DET_HIGH_PERF_MODE) {
+            ALOGD("%s:[%d] lpi NOT supported due to high perf mode", __func__,
+                ses->sm_handle);
+            return false;
+        }
+    }
+
+    if (stdev->platform_lpi_enable == ST_PLATFORM_LPI_NONE)
+        return is_projected_lpi_budget_available(stdev, st_ses);
+    else
+        return true;
 }
 
 bool st_hw_check_vad_support
@@ -256,9 +274,15 @@ bool st_hw_check_vad_support
 void st_hw_check_and_set_lpi_mode(st_session_t *st_ses)
 {
     if (st_ses && st_ses->hw_ses_adsp) {
-        st_ses->hw_ses_adsp->lpi_enable =
-            (st_ses->vendor_uuid_info->lpi_enable &&
-            is_projected_lpi_budget_available(st_ses->stdev, st_ses));
+        if (st_ses->stdev->platform_lpi_enable == ST_PLATFORM_LPI_NONE) {
+            st_ses->hw_ses_adsp->lpi_enable =
+                (st_ses->vendor_uuid_info->lpi_enable &&
+                is_projected_lpi_budget_available(st_ses->stdev, st_ses));
+        } else {
+            st_ses->hw_ses_adsp->lpi_enable =
+                (st_ses->stdev->platform_lpi_enable ==
+                 ST_PLATFORM_LPI_ENABLE) ? true: false;
+        }
     }
 }
 
@@ -280,6 +304,7 @@ static int parse_config_key_conf_levels
     uint32_t i = 0;
     bool gmm_conf_found = false;
     uint8_t confidence_level = 0;
+    int32_t confidence_level_v2 = 0;
     bool arm_second_stage = st_hw_ses->enable_second_stage;
     bool adsp_second_stage = (st_hw_ses == st_ses->hw_ses_adsp &&
                               !list_empty(&st_hw_ses->lsm_ss_cfg_list));
@@ -389,7 +414,8 @@ static int parse_config_key_conf_levels
                 gmm_conf_found = true;
             } else if ((sm_levels_v2->sm_id == ST_SM_ID_SVA_CNN) ||
                        (sm_levels_v2->sm_id == ST_SM_ID_SVA_VOP)) {
-                confidence_level = (sm_levels_v2->sm_id == ST_SM_ID_SVA_CNN) ?
+                confidence_level_v2 =
+                    (sm_levels_v2->sm_id == ST_SM_ID_SVA_CNN) ?
                     sm_levels_v2->kw_levels[0].kw_level:
                     sm_levels_v2->kw_levels[0].user_levels[0].level;
                 if (arm_second_stage) {
@@ -400,7 +426,7 @@ static int parse_config_key_conf_levels
                         if (st_sec_stage->ss_info->sm_id ==
                             sm_levels_v2->sm_id)
                             st_sec_stage->ss_session->confidence_threshold =
-                                confidence_level;
+                                confidence_level_v2;
                     }
                 } else if (adsp_second_stage) {
                     list_for_each_safe(node, tmp_node,
@@ -408,7 +434,7 @@ static int parse_config_key_conf_levels
                         ss_cfg = node_to_item(node, st_lsm_ss_config_t,
                             list_node);
                         if (ss_cfg->ss_info->sm_id == sm_levels_v2->sm_id)
-                            ss_cfg->confidence_threshold = confidence_level;
+                            ss_cfg->confidence_threshold = confidence_level_v2;
                     }
                 }
             } else {

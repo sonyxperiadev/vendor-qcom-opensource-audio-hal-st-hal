@@ -146,8 +146,8 @@ static int32_t (*gcs_set_config_fn)(uint32_t graph_handle, void *payload,
     uint32_t payload_size);
 
 /* used to output pcm to file for debugging */
-ST_DBG_DECLARE(static FILE *lab_fp_gcs = NULL; static int lab_fp_gcs_cnt = 0);
-ST_DBG_DECLARE(static FILE *lab_fp_client = NULL; static int lab_fp_client_cnt = 0);
+ST_DBG_DECLARE(static int lab_fp_gcs_cnt = 0);
+ST_DBG_DECLARE(static int lab_fp_client_cnt = 0);
 
 struct st_hw_gcs_data {
     void *lib_handle;
@@ -308,7 +308,7 @@ static int32_t gcs_data_cmdrsp_cb(uint32_t graph_handle,
     buff_sz = hdr->size_in_bytes - sizeof(struct gcs_cmd_readrsp_payload_t);
     buff = (uint8_t *)payload + sizeof(struct gcs_cmd_readrsp_payload_t);
 
-    ST_DBG_FILE_WRITE(lab_fp_gcs, buff, buff_sz);
+    ST_DBG_FILE_WRITE(p_gcs_ses->lab_fp_gcs, buff, buff_sz);
 
     if (buff_sz > ST_GCS_READ_BUF_SIZE) {
         ALOGW("%s: received size %d more than requested %d, truncate",
@@ -1629,9 +1629,9 @@ static void process_lab_capture(st_hw_session_t *p_ses)
         return;
     }
 
-    ST_DBG_FILE_OPEN_WR(lab_fp_gcs, ST_DEBUG_DUMP_LOCATION, "lab_gcs_to_sthal",
+    ST_DBG_FILE_OPEN_WR(p_hw_ses->lab_fp_gcs, ST_DEBUG_DUMP_LOCATION, "lab_gcs_to_sthal",
         "bin", lab_fp_gcs_cnt++);
-    ST_DBG_FILE_OPEN_WR(lab_fp_client, ST_DEBUG_DUMP_LOCATION, "lab_sthal_to_client",
+    ST_DBG_FILE_OPEN_WR(p_hw_ses->lab_fp_client, ST_DEBUG_DUMP_LOCATION, "lab_sthal_to_client",
         "bin", lab_fp_client_cnt++);
 
     while (p_hw_ses->read_rsp_cnt && !p_hw_ses->exit_buffering) {
@@ -1697,8 +1697,8 @@ static void process_lab_capture(st_hw_session_t *p_ses)
         wdsp_debug_dump(gcs_data.sysfs_fd);
     }
 
-    ST_DBG_FILE_CLOSE(lab_fp_gcs);
-    ST_DBG_FILE_CLOSE(lab_fp_client);
+    ST_DBG_FILE_CLOSE(p_hw_ses->lab_fp_gcs);
+    ST_DBG_FILE_CLOSE(p_hw_ses->lab_fp_client);
 
     /*
      * Signal back to thread calling stop_buffering that
@@ -1777,7 +1777,7 @@ static int read_pcm(st_hw_session_t *p_ses,
 
             p_gcs_ses->unread_bytes -= copy_bytes;
 
-            ST_DBG_FILE_WRITE(lab_fp_client, client_buf, copy_bytes);
+            ST_DBG_FILE_WRITE(p_gcs_ses->lab_fp_client, client_buf, copy_bytes);
 
             bytes -= copy_bytes;
             client_buf += copy_bytes;
@@ -1861,6 +1861,8 @@ int st_hw_sess_gcs_init(st_hw_session_t *const p_ses,
     p_hw_ses->exit_detection = false;
     p_hw_ses->exit_buffering = false;
     p_hw_ses->lab_processing_active = false;
+    p_hw_ses->lab_fp_gcs = NULL;
+    p_hw_ses->lab_fp_client = NULL;
     pthread_condattr_init(&cond_attr);
     pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC);
     pthread_cond_init(&p_hw_ses->callback_thread_cond, &cond_attr);

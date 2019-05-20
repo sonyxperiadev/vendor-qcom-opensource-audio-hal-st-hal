@@ -100,6 +100,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_BIT_WIDTH "bit_width"
 #define ST_PARAM_KEY_CHANNEL_COUNT "channel_count"
 #define ST_PARAM_KEY_IN_CHANNELS "in_channels"
+#define ST_PARAM_KEY_IN_CHANNELS_LPI "in_channels_lpi"
 #define ST_PARAM_KEY_OUT_CHANNELS "out_channels"
 #define ST_PARAM_KEY_ADM_CFG_PROFILE "adm_cfg_profile"
 #define ST_PARAM_KEY_CAPTURE_DEVICE "capture_device"
@@ -116,6 +117,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_START_ENGINE_IDS "start_engine_ids"
 #define ST_PARAM_KEY_RESTART_ENGINE_IDS "restart_engine_ids"
 #define ST_PARAM_KEY_REQUEST_DETECTION_IDS "request_detection_ids"
+#define ST_PARAM_KEY_LAB_DAM_CFG_IDS "lab_dam_cfg_ids"
 #define ST_PARAM_KEY_UID "uid"
 #define ST_PARAM_KEY_ACDB_DEVICES "acdb_devices"
 #define ST_PARAM_KEY_CAPTURE_KEYWORD "capture_keyword"
@@ -136,6 +138,7 @@ typedef unsigned char __u8;
     "transit_to_adsp_on_battery_charging"
 #define ST_PARAM_KEY_TRANSIT_TO_NON_LPI_ON_BATTERY_CHARGING \
     "transit_to_non_lpi_on_battery_charging"
+#define ST_PARAM_KEY_PLATFORM_LPI_ENABLE "platform_lpi_enable"
 #define ST_PARAM_KEY_TRANSIT_WAIT_TIME "transit_wait_time"
 #define ST_PARAM_KEY_SPLIT_EC_REF_DATA "split_ec_ref_data"
 #define ST_PARAM_KEY_EC_REF_CHANNEL_COUNT "ec_ref_channel_count"
@@ -146,7 +149,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_LPI_ENABLE "lpi_enable"
 #define ST_PARAM_KEY_VAD_ENABLE "vad_enable"
 #define ST_PARAM_KEY_DEDICATED_SVA_PATH "dedicated_sva_path"
-#define ST_PARAM_KEY_DISABLE_LPI_BUDGET "disable_lpi_budget"
+#define ST_PARAM_KEY_DAM_TOKEN_ID "dam_token_id"
 
 #ifndef Q6AFE_HWDEP_NODE
 #define Q6AFE_HWDEP_NODE -1
@@ -174,6 +177,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_DEVICE_HANDSET_QMIC_LPI_APE "DEVICE_HANDSET_QMIC_LPI_APE"
 #define ST_PARAM_KEY_DEVICE_HANDSET_6MIC_LPI_APE "DEVICE_HANDSET_6MIC_LPI_APE"
 #define ST_PARAM_KEY_DEVICE_HANDSET_8MIC_LPI_APE "DEVICE_HANDSET_8MIC_LPI_APE"
+#define ST_PARAM_KEY_DEVICE_HEADSET_LPI_APE "DEVICE_HEADSET_MIC_APE_LPI"
 
 #define ST_PARAM_KEY_SS_SM_TYPE "sm_detection_type"
 #define ST_PARAM_KEY_SS_SM_ID "sm_id"
@@ -212,6 +216,7 @@ st_device_name_idx[ST_EXEC_MODE_MAX][ST_DEVICE_MAX] = {
        {"DEVICE_HANDSET_6MIC_LPI_APE", ST_DEVICE_HANDSET_6MIC_LPI},
        {"DEVICE_HANDSET_8MIC_LPI_APE", ST_DEVICE_HANDSET_8MIC_LPI},
        {"DEVICE_HEADSET_MIC_APE", ST_DEVICE_HEADSET_MIC},
+       {"DEVICE_HEADSET_MIC_APE_LPI", ST_DEVICE_HEADSET_MIC_LPI},
    },
    {
        {"DEVICE_HANDSET_MIC_CPE", ST_DEVICE_HANDSET_MIC},
@@ -246,6 +251,7 @@ st_device_table[ST_EXEC_MODE_MAX][ST_DEVICE_MAX] = {
         [ST_DEVICE_HANDSET_6MIC_LPI] = "listen-ape-handset-6mic",
         [ST_DEVICE_HANDSET_8MIC_LPI] = "listen-ape-handset-8mic",
         [ST_DEVICE_HEADSET_MIC] = "listen-ape-headset-mic",
+        [ST_DEVICE_HEADSET_MIC_LPI] = "listen-ape-headset-mic",
     },
     {
         /* CPE SVA devices */
@@ -283,6 +289,7 @@ static int acdb_device_table[ST_EXEC_MODE_MAX][ST_DEVICE_MAX] = {
       [ST_DEVICE_HANDSET_6MIC_LPI] = DEVICE_HANDSET_APE_ACDB_ID,
       [ST_DEVICE_HANDSET_8MIC_LPI] = DEVICE_HANDSET_APE_ACDB_ID,
       [ST_DEVICE_HEADSET_MIC] = DEVICE_HEADSET_APE_ACDB_ID,
+      [ST_DEVICE_HEADSET_MIC_LPI] = DEVICE_HEADSET_APE_ACDB_ID,
     },
     {
       [ST_DEVICE_NONE] = -1,
@@ -709,13 +716,10 @@ static void platform_stdev_set_default_config(struct platform_data *platform)
     stdev->conc_voice_call_supported = false;
     stdev->conc_voip_call_supported = false;
     stdev->dedicated_sva_path = false;
-    stdev->disable_lpi_budget = false;
     stdev->disable_hwmad = false;
+    stdev->platform_lpi_enable = ST_PLATFORM_LPI_NONE;
 
     platform->cpe_fe_to_be_fixed = true;
-    platform->codec_backend_cfg.sample_rate = SOUND_TRIGGER_SAMPLING_RATE_48000;
-    platform->codec_backend_cfg.format = PCM_FORMAT_S16_LE;
-    platform->codec_backend_cfg.channel_count = SOUND_TRIGGER_CHANNEL_MODE_MONO;
     platform->bad_mic_channel_index = 0;
     platform->ec_ref_enabled = false;
     platform->be_dai_name_table = NULL;
@@ -1025,6 +1029,15 @@ static int platform_set_common_config
             !strncasecmp(str_value, "true", 4) ? true : false;
     }
 
+    err = str_parms_get_str(parms, ST_PARAM_KEY_PLATFORM_LPI_ENABLE, str_value,
+                            sizeof(str_value));
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_PLATFORM_LPI_ENABLE);
+        stdev->platform_lpi_enable =
+            !strncasecmp(str_value, "true", 4) ? ST_PLATFORM_LPI_ENABLE :
+            ST_PLATFORM_LPI_DISABLE;
+    }
+
     err = str_parms_get_int(parms, ST_PARAM_KEY_TRANSIT_WAIT_TIME, &value);
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_TRANSIT_WAIT_TIME);
@@ -1103,14 +1116,6 @@ static int platform_set_common_config
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_DEDICATED_SVA_PATH);
         stdev->dedicated_sva_path =
-            !strncasecmp(str_value, "true", 4) ? true : false;
-    }
-
-    err = str_parms_get_str(parms, ST_PARAM_KEY_DISABLE_LPI_BUDGET,
-                            str_value, sizeof(str_value));
-    if (err >= 0) {
-        str_parms_del(parms, ST_PARAM_KEY_DISABLE_LPI_BUDGET);
-        stdev->disable_lpi_budget =
             !strncasecmp(str_value, "true", 4) ? true : false;
     }
 
@@ -1297,6 +1302,14 @@ static int platform_set_acdb_ids
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_DEVICE_HANDSET_8MIC_LPI_APE);
         ret = platform_stdev_set_acdb_id(platform, ST_PARAM_KEY_DEVICE_HANDSET_8MIC_LPI_APE, value);
+        if (ret)
+            goto exit;
+    }
+
+    err = str_parms_get_int(parms, ST_PARAM_KEY_DEVICE_HEADSET_LPI_APE, &value);
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_DEVICE_HEADSET_LPI_APE);
+        ret = platform_stdev_set_acdb_id(platform, ST_PARAM_KEY_DEVICE_HEADSET_LPI_APE, value);
         if (ret)
             goto exit;
     }
@@ -2043,6 +2056,17 @@ static int platform_stdev_set_lsm_params
         lsm_params->param_tag_tracker |= PARAM_REQUEST_DETECTION_BIT;
     }
 
+    err = str_parms_get_str(parms, ST_PARAM_KEY_LAB_DAM_CFG_IDS,
+                            str_value, sizeof(str_value));
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_LAB_DAM_CFG_IDS);
+        ret = platform_stdev_set_module_param_ids(
+            &lsm_params->params[LAB_DAM_CFG], str_value, is_legacy_params);
+        if (ret)
+            goto err_exit;
+        lsm_params->param_tag_tracker |= PARAM_LAB_DAM_CFG_BIT;
+    }
+
     err = str_parms_get_str(parms, ST_PARAM_KEY_CONFIDENCE_LEVELS_IDS,
                             str_value, sizeof(str_value));
     if (err >= 0) {
@@ -2123,6 +2147,13 @@ static int platform_stdev_set_lsm_params
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_IN_CHANNELS);
         lsm_params->in_channels = value;
+    }
+
+    lsm_params->in_channels_lpi = lsm_params->in_channels;
+    err = str_parms_get_int(parms, ST_PARAM_KEY_IN_CHANNELS_LPI, &value);
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_IN_CHANNELS_LPI);
+        lsm_params->in_channels_lpi = value;
     }
 
     if (my_data->xml_version >= PLATFORM_XML_VERSION_0x0105) {
@@ -2463,6 +2494,12 @@ static int platform_stdev_set_sm_config_params
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_VAD_ENABLE);
         sm_info->vad_enable = !strncasecmp(str_value, "true", 4) ? true : false;
+    }
+
+    err = str_parms_get_int(parms, ST_PARAM_KEY_DAM_TOKEN_ID, &value);
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_DAM_TOKEN_ID);
+        sm_info->lab_dam_cfg_payload.token_id = value;
     }
 
     sm_info->avail_transit_ape_phrases = sm_info->avail_ape_phrases;
@@ -2922,17 +2959,19 @@ static void query_stdev_platform(sound_trigger_device_t *stdev,
     if (strstr(snd_card_name, "qrd")) {
         char *tmp = NULL;
         char *snd_internal_name = NULL;
-        char *temp_path = strdup(mixer_path_xml);
-        if (temp_path != NULL) {
-            char *snd_card_name_t = strdup(snd_card_name);
-            if (snd_card_name_t != NULL) {
-                snd_internal_name = strtok_r(snd_card_name_t, "-", &tmp);
-                while (snd_internal_name != NULL) {
-                    snd_internal_name = strtok_r(NULL, "-", &tmp);
-                    if ((snd_internal_name != NULL) &&
-                        strstr(snd_internal_name, "qrd"))
-                        break;
-                }
+        char temp_path[MIXER_PATH_MAX_LENGTH];
+
+        strlcpy(temp_path, mixer_path_xml, MIXER_PATH_MAX_LENGTH);
+        char *snd_card_name_t = strdup(snd_card_name);
+        if (snd_card_name_t != NULL) {
+            snd_internal_name = strtok_r(snd_card_name_t, "-", &tmp);
+            while (snd_internal_name != NULL) {
+                snd_internal_name = strtok_r(NULL, "-", &tmp);
+                if ((snd_internal_name != NULL) &&
+                    strstr(snd_internal_name, "qrd"))
+                    break;
+            }
+            if (snd_internal_name != NULL) {
                 strlcat(temp_path, "_", MIXER_PATH_MAX_LENGTH);
                 strlcat(temp_path, snd_internal_name, MIXER_PATH_MAX_LENGTH);
                 strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
@@ -2940,9 +2979,8 @@ static void query_stdev_platform(sound_trigger_device_t *stdev,
                     strlcat(mixer_path_xml, "_", MIXER_PATH_MAX_LENGTH);
                     strlcat(mixer_path_xml, snd_internal_name, MIXER_PATH_MAX_LENGTH);
                 }
-                free(snd_card_name_t);
             }
-            free(temp_path);
+            free(snd_card_name_t);
         }
     }
     strlcat(mixer_path_xml, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
@@ -3577,6 +3615,8 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
 
     init_be_dai_name_table(my_data);
 
+    platform_stdev_reset_backend_cfg(my_data);
+
     return my_data;
 
 cleanup_2:
@@ -3832,7 +3872,10 @@ static int get_st_device
     case AUDIO_DEVICE_IN_WIRED_HEADSET:
         if ((ST_EXEC_MODE_CPE == exec_mode) ||
             (ST_EXEC_MODE_ADSP == exec_mode)) {
-            st_device = ST_DEVICE_HEADSET_MIC;
+            if (my_data->codec_backend_cfg.lpi_enable)
+                st_device = ST_DEVICE_HEADSET_MIC_LPI;
+            else
+                st_device = ST_DEVICE_HEADSET_MIC;
             break;
         }
     case AUDIO_DEVICE_IN_BUILTIN_MIC:
@@ -4845,6 +4888,26 @@ void platform_free_gcs_usecase
     list_add_head(&v_info->gcs_usecase_list, &gcs_usecase->list_node);
 }
 
+static int get_shared_buf_fmt
+(
+    st_profile_type_t profile
+)
+{
+    int ret = ST_SHARED_BUF_RAW;
+
+    switch (profile) {
+    case ST_PROFILE_TYPE_FLUENCE:
+    case ST_PROFILE_TYPE_FLUENCE_STEREO:
+    case ST_PROFILE_TYPE_FFECNS:
+        ret = ST_SHARED_BUF_PROCESSED;
+        break;
+    default:
+        ret = ST_SHARED_BUF_RAW;
+    }
+
+    return ret;
+}
+
 void platform_get_lsm_usecase
 (
    void* platform,
@@ -4881,6 +4944,8 @@ void platform_get_lsm_usecase
                     v_info->in_channels = usecase->in_channels;
                     v_info->fluence_type = usecase->fluence_type;
                     v_info->profile_type = usecase->adm_cfg_profile;
+                    v_info->shared_buf_fmt =
+                        get_shared_buf_fmt(v_info->profile_type);
                     v_info->app_type = usecase->app_type;
                     return;
                 }
@@ -5077,6 +5142,32 @@ int platform_stdev_set_codec_backend_cfg
                                            &backend_cfg_change,
                                            true, /* force */
                                            lpi_enable, vad_enable, vad_preroll);
+}
+
+int platform_stdev_set_shared_buf_fmt
+(
+   void *platform,
+   int pcm_id,
+   int shared_buf_fmt
+)
+{
+    struct platform_data *my_data = (struct platform_data *)platform;
+    sound_trigger_device_t *stdev = my_data->stdev;
+    char mixer_ctl_name[ST_MAX_LENGTH_MIXER_CONTROL];
+    struct mixer_ctl *ctl = NULL;
+
+    snprintf(mixer_ctl_name, sizeof(mixer_ctl_name),
+             "Listen Stream %d Unprocessed Data", pcm_id);
+    ctl = mixer_get_ctl_by_name(stdev->mixer, mixer_ctl_name);
+    if (!ctl) {
+        ALOGE("%s: ERROR. Could not get ctl for mixer cmd - %s",
+            __func__, mixer_ctl_name);
+        return -EINVAL;
+    }
+
+    mixer_ctl_set_value(ctl, 0, shared_buf_fmt);
+
+    return 0;
 }
 
 int platform_stdev_send_stream_app_type_cfg

@@ -179,11 +179,13 @@ int st_buffer_read(st_buffer_t *buf_obj, uint8_t *dst, uint32_t size,
         } else {
             ALOGE("%s: Error. Need to pass in rd_ptr when not flushing",
                 __func__);
+            pthread_mutex_unlock(&buf_obj->lock);
             return -EINVAL;
         }
     } else if (flush) {
         ALOGE("%s: Error. Cannot pass in rd_ptr and flush",
             __func__);
+        pthread_mutex_unlock(&buf_obj->lock);
         return -EINVAL;
     }
 

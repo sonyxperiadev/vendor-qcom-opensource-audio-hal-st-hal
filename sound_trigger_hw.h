@@ -154,8 +154,8 @@ struct sound_trigger_device {
     bool stop_transitions_thread_loop;
     transit_dir_t transit_dir;
     bool dedicated_sva_path;
-    bool disable_lpi_budget;
     bool disable_hwmad;
+    st_platform_lpi_enable_t platform_lpi_enable;
 
     unsigned int rx_conc_max_st_ses;
     struct use_case_info *ape_pcm_use_cases;

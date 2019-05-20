@@ -906,21 +906,25 @@ static void *transitions_thread_loop(void * context __unused)
         acquire_wake_lock(PARTIAL_WAKE_LOCK, TRANSIT_WAKE_LOCK_NAME);
         ssr_retry = TRANSIT_SSR_TIMEOUT_SEC / stdev->transit_wait_time;
         if (stdev->transit_dir == TRANSIT_APE_TO_CPE) {
-            while (!stdev->rx_concurrency_active &&
-                   !stdev->is_charging) {
+            while (1) {
                 pthread_mutex_unlock(&stdev->lock);
                 sleep(stdev->transit_wait_time);
                 pthread_mutex_lock(&stdev->lock);
-
+                bool keep_ape_mode = (stdev->rx_concurrency_active &&
+                                      stdev->transit_to_adsp_on_playback) ||
+                                     (stdev->is_charging &&
+                                      stdev->transit_to_adsp_on_battery_charging);
                 if (stdev->transit_dir != TRANSIT_APE_TO_CPE) {
                     ALOGD("transit_dir change to %d", stdev->transit_dir);
+                    goto release_wl;
+                } else if (keep_ape_mode) {
+                    ALOGD("%s:No need to transit to CPE", __func__);
+                    stdev->transit_dir = TRANSIT_NONE;
                     goto release_wl;
                 }
 
                 in_ssr = is_any_session_ssr_state();
                 if (!is_any_session_buffering() &&
-                    !stdev->rx_concurrency_active &&
-                    !stdev->is_charging &&
                     !in_ssr) {
                     /* Transition to WDSP */
                     ATRACE_BEGIN("sthal: check_and_transit_ape_ses_to_cpe");

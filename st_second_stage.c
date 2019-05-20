@@ -60,8 +60,8 @@
 #include "capi_v2_extn.h"
 #include "st_hw_session_gcs.h"
 
-ST_DBG_DECLARE(FILE *ss_fd_kw_det = NULL; static int ss_fd_cnt_kw_det = 0);
-ST_DBG_DECLARE(FILE *ss_fd_user_ver = NULL; static int ss_fd_cnt_user_ver = 0);
+ST_DBG_DECLARE(static int ss_fd_cnt_kw_det = 0);
+ST_DBG_DECLARE(static int ss_fd_cnt_user_ver = 0);
 
 static int process_frame_keyword_detection(st_arm_ss_session_t *ss_session,
     uint8_t *frame, capi_v2_stream_data_t *stream_input,
@@ -192,7 +192,7 @@ static int start_keyword_detection(st_arm_second_stage_t *st_sec_stage)
         }
         ss_session->unread_bytes -= ss_session->buff_sz;
 
-        ST_DBG_FILE_WRITE(ss_fd_kw_det, process_input_buff,
+        ST_DBG_FILE_WRITE(st_sec_stage->dump_fp, process_input_buff,
             ss_session->buff_sz);
         pthread_mutex_unlock(&ss_session->lock);
         ret = process_frame_keyword_detection(ss_session, process_input_buff,
@@ -406,7 +406,7 @@ static int start_user_verification(st_arm_second_stage_t *st_sec_stage)
         }
         ss_session->unread_bytes -= ss_session->buff_sz;
 
-        ST_DBG_FILE_WRITE(ss_fd_user_ver, process_input_buff,
+        ST_DBG_FILE_WRITE(st_sec_stage->dump_fp, process_input_buff,
             ss_session->buff_sz);
         pthread_mutex_unlock(&ss_session->lock);
         ret = process_frame_user_verification(ss_session, process_input_buff,
@@ -510,15 +510,15 @@ static void *buffer_thread_loop(void *st_second_stage)
 
         if (st_sec_stage->ss_info->sm_detection_type ==
             ST_SM_TYPE_KEYWORD_DETECTION) {
-            ST_DBG_FILE_OPEN_WR(ss_fd_kw_det, ST_DEBUG_DUMP_LOCATION,
+            ST_DBG_FILE_OPEN_WR(st_sec_stage->dump_fp, ST_DEBUG_DUMP_LOCATION,
                 "ss_buf_kw_det", "bin", ss_fd_cnt_kw_det++);
             start_keyword_detection(st_sec_stage);
-            ST_DBG_FILE_CLOSE(ss_fd_kw_det);
+            ST_DBG_FILE_CLOSE(st_sec_stage->dump_fp);
         } else {
-            ST_DBG_FILE_OPEN_WR(ss_fd_user_ver, ST_DEBUG_DUMP_LOCATION,
+            ST_DBG_FILE_OPEN_WR(st_sec_stage->dump_fp, ST_DEBUG_DUMP_LOCATION,
                 "ss_buf_user_ver", "bin", ss_fd_cnt_user_ver++);
             start_user_verification(st_sec_stage);
-            ST_DBG_FILE_CLOSE(ss_fd_user_ver);
+            ST_DBG_FILE_CLOSE(st_sec_stage->dump_fp);
         }
     }
     pthread_mutex_unlock(&ss_session->lock);
@@ -646,6 +646,7 @@ int st_second_stage_module_init(st_arm_second_stage_t *st_sec_stage,
         return -EINVAL;
     }
     ss_session = st_sec_stage->ss_session;
+    st_sec_stage->dump_fp = NULL;
 
     /* Allocate extra pointers needed in the capi wrappers */
     if (st_sec_stage->ss_info->sm_detection_type ==

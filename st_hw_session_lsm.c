@@ -447,7 +447,16 @@ static uint64_t get_event_timestamp(st_lsm_event_status_t *params __unused)
 #ifdef LSM_POLLING_ENABLE_SUPPORT
 static int lsm_set_port(st_hw_session_lsm_t *p_lsm_ses)
 {
-    int status;
+    int status = 0;
+
+    if (p_lsm_ses->common.stdev->lpi_enable &&
+        p_lsm_ses->common.vendor_uuid_info->lab_dam_cfg_payload.token_id) {
+        status = platform_stdev_set_shared_buf_fmt(
+            p_lsm_ses->common.stdev->platform, p_lsm_ses->pcm_id,
+            p_lsm_ses->common.vendor_uuid_info->shared_buf_fmt);
+        if (status)
+            return status;
+    }
 
     status = pcm_ioctl(p_lsm_ses->pcm, SNDRV_LSM_SET_PORT);
     if (status)
@@ -501,7 +510,10 @@ static int send_lsm_input_hw_params(st_hw_session_t *p_ses)
 
     params.sample_rate = v_info->sample_rate;
     params.bit_width = pcm_format_to_bits(v_info->format);
-    params.num_channels = p_lsm_ses->lsm_usecase->in_channels;
+    if (platform_get_lpi_mode(p_ses->stdev->platform))
+        params.num_channels = p_lsm_ses->lsm_usecase->in_channels_lpi;
+    else
+        params.num_channels = p_lsm_ses->lsm_usecase->in_channels;
 
     ALOGV("%s: set SNDRV_LSM_SET_INPUT_HW_PARAMS sr=%d bw=%d ch=%d ", __func__,
           params.sample_rate, params.bit_width, params.num_channels);
@@ -2180,10 +2192,6 @@ static int ape_reg_sm(st_hw_session_t *p_ses, void *sm_data,
         goto sm_error;
     }
 
-    status = send_lsm_input_hw_params(p_ses);
-    if (status)
-        goto sm_error;
-
     /* Send detection event type for last stage only, if params set in config */
     mparams = NULL;
     if ((p_lsm_ses->num_stages == 1) &&
@@ -2383,7 +2391,9 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
     uint32_t custom_payload_size, smm_th_conf_param_size;
     uint32_t data_payload_size, lsm_param_payload_size;
     uint32_t data_payload_addr_lsw = 0, data_payload_addr_msw = 0, mem_map_handle = 0;
+    uint32_t lab_dam_payload_size = 0;
     unsigned char *custom_payload = NULL, *smm_th_conf_param = NULL;
+    unsigned char *lab_dam_payload = NULL;
     struct st_vendor_info *v_info = p_lsm_ses->common.vendor_uuid_info;
     struct snd_lsm_module_params lsm_params;
     lsm_param_info_t param_info[LSM_SM_PARAMS_INFO_IDX];
@@ -2392,6 +2402,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
     lsm_param_info_t *cus_params;
     lsm_param_info_t *poll_en_params;
     lsm_param_info_t *lab_params;
+    lsm_param_info_t *lab_dam_cfg_params;
     struct snd_lsm_detect_mode det_mode;
     st_lsm_poll_enable_t poll_enable;
     bool disable_custom_config = false;
@@ -2401,6 +2412,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
     int param_count = 0, stage_idx = 0;
     struct lsm_param_custom_config custom_conf_params;
     lsm_param_payload_t custom_conf_params_v2 = {0};
+    lsm_param_payload_t cus_dam_cfg_params = {0};
 
     ALOGD("%s:[%d] Enter", __func__, p_lsm_ses->common.sm_handle);
     if (!p_lsm_ses->pcm) {
@@ -2430,6 +2442,10 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
         goto error_exit;
     }
 
+    status = send_lsm_input_hw_params(p_ses);
+    if (status)
+        goto error_exit;
+
     if ((rc_config->data_size > CUSTOM_CONFIG_OPAQUE_DATA_SIZE) &&
         p_ses->vendor_uuid_info->is_qcva_uuid && !capture_requested)
         disable_custom_config = true;
@@ -2458,7 +2474,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
             det_mode.mode = LSM_MODE_USER_KEYWORD_DETECTION;
     } else {
         ALOGE("%s: Unknown recognition mode %d", __func__, recognition_mode);
-        goto error_exit;
+        goto error_exit_1;
     }
 
     stage_idx = LSM_STAGE_INDEX_FIRST;
@@ -2536,7 +2552,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
                 custom_payload = (unsigned char *)calloc(1, custom_payload_size);
                 if (!custom_payload) {
                     ALOGE("%s: ERROR. Cannot allocate memory for custom_payload", __func__);
-                    goto error_exit;
+                    goto error_exit_1;
                 }
                 /* copy custom config params to payload */
                 memcpy(custom_payload, &custom_conf_params_v2, sizeof(custom_conf_params_v2));
@@ -2562,7 +2578,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
                 custom_payload = (unsigned char *)calloc(1, custom_payload_size);
                 if (!custom_payload) {
                     ALOGE("%s: ERROR. Cannot allcoate memory for custom_payload", __func__);
-                    goto error_exit;
+                    goto error_exit_1;
                 }
                 /* copy custom config params to payload */
                 memcpy(custom_payload, &custom_conf_params, sizeof(struct lsm_param_custom_config));
@@ -2589,7 +2605,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
             custom_payload = (unsigned char *)calloc(1, custom_payload_size);
             if (!custom_payload) {
                 ALOGE("%s: ERROR. Cannot allocate memory for custom_payload", __func__);
-                goto error_exit;
+                goto error_exit_1;
             }
             memcpy(custom_payload, (char *)rc_config + rc_config->data_offset,
                 rc_config->data_size);
@@ -2611,6 +2627,44 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
                             &mparams[LAB_CONTROL], stage_idx);
     }
 
+    /*
+     * If shared buffering is supported and LPI mode is enabled, send the DAM
+     * driver param to DSP to set the shared buffer token for this session.
+     */
+    if (capture_requested && p_ses->stdev->lpi_enable &&
+        p_ses->vendor_uuid_info->lab_dam_cfg_payload.token_id &&
+        (p_lsm_ses->lsm_usecase->param_tag_tracker &
+         PARAM_LAB_DAM_CFG_BIT)) {
+
+        lab_dam_cfg_params = &param_info[param_count++];
+        p_ses->vendor_uuid_info->lab_dam_cfg_payload.minor_version = 0x1;
+
+        lsm_param_payload_size = sizeof(struct lab_dam_cfg_payload);
+
+        lsm_fill_param_header(&cus_dam_cfg_params,
+            lsm_param_payload_size, &mparams[LAB_DAM_CFG]);
+
+        lab_dam_payload_size = sizeof(cus_dam_cfg_params) +
+            lsm_param_payload_size;
+        lab_dam_payload = (unsigned char *)calloc(1, lab_dam_payload_size);
+        if (!lab_dam_payload) {
+            ALOGE("%s: ERROR. Cannot allocate memory for lab_dam_payload",
+                __func__);
+            goto error_exit_1;
+        }
+        /* copy custom config params to payload */
+        memcpy(lab_dam_payload, &cus_dam_cfg_params,
+            sizeof(cus_dam_cfg_params));
+        memcpy(lab_dam_payload + sizeof(cus_dam_cfg_params),
+            &p_ses->vendor_uuid_info->lab_dam_cfg_payload,
+            lsm_param_payload_size);
+
+        lab_dam_cfg_params->param_size = lab_dam_payload_size;
+        lab_dam_cfg_params->param_data = (unsigned char *)lab_dam_payload;
+        lsm_fill_param_info(LSM_CUSTOM_PARAMS, lab_dam_cfg_params,
+                            &mparams[LAB_DAM_CFG], stage_idx);
+    }
+
     /* Send all applicable module params for this(first) stage */
     lsm_params.num_params = param_count;
     if (lsm_params.num_params) {
@@ -2627,7 +2681,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
         if (status) {
             ALOGE("%s: ERROR. sending sm_params, status %d, stage 0",
                   __func__, status);
-                goto error_exit;
+                goto error_exit_1;
         }
     }
 
@@ -2648,7 +2702,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
         if (!(param_tag_tracker & PARAM_LAB_CONTROL_BIT)) {
             ALOGE("%s: ERROR: lab control param not set for multi-stage ses %p, stage %d",
                   __func__, p_ses, stage_idx);
-            goto error_exit;
+            goto error_exit_1;
         }
 
         if (param_tag_tracker & PARAM_CONFIDENCE_LEVELS_BIT) {
@@ -2659,7 +2713,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
             smm_th_conf_param = (unsigned char *)calloc(1, smm_th_conf_param_size);
             if (!smm_th_conf_param) {
                 ALOGE("%s: ERROR. Cannot allocate memory for smm_th_config", __func__);
-                goto error_exit;
+                goto error_exit_1;
             }
 
             lsm_fill_param_header((lsm_param_payload_t *)smm_th_conf_param,
@@ -2747,7 +2801,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
             if (status) {
                 ALOGE("%s: ERROR. sending reg_sm_params, status %d stage %d",
                       __func__, status, stage_idx);
-                goto error_exit;
+                goto error_exit_1;
             }
         }
     }
@@ -2766,33 +2820,39 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
             if (status) {
                 ALOGE("%s: ERROR. SNDRV_LSM_LAB_CONTROL failed, status=%d",
                       __func__, status);
-                goto error_exit;
+                goto error_exit_1;
             }
         }
 
         if (!p_lsm_ses->lab_buffers_allocated) {
             status = allocate_lab_buffers_ape(p_lsm_ses);
             if (status)
-                goto error_exit;
+                goto error_exit_1;
         }
     }
 
     return status;
 
-error_exit:
+error_exit_1:
 
     if (p_lsm_ses->lab_buffers_allocated)
         deallocate_lab_buffers_ape(p_lsm_ses);
 
-    pcm_stop(p_lsm_ses->pcm);
-    ape_enable_use_case(false, p_ses);
-    ape_enable_port_control(false, p_ses);
+    if (smm_th_conf_param)
+        free(smm_th_conf_param);
+
+    if (lab_dam_payload)
+        free(lab_dam_payload);
 
     if (custom_payload)
         free(custom_payload);
 
-    if (smm_th_conf_param)
-        free(smm_th_conf_param);
+    pcm_stop(p_lsm_ses->pcm);
+
+error_exit:
+
+    ape_enable_use_case(false, p_ses);
+    ape_enable_port_control(false, p_ses);
 
     ALOGD("%s:[%d] Exit, status=%d", __func__,
         p_lsm_ses->common.sm_handle, status);

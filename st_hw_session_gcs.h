@@ -93,6 +93,8 @@ typedef struct st_hw_session_gcs {
     uint64_t frame_receive_time;
 
     uint8_t *mulaw_op_buf;
+    FILE *lab_fp_gcs;
+    FILE *lab_fp_client;
 } st_hw_session_gcs_t;
 
 int st_hw_sess_gcs_init(st_hw_session_t *const p_ses,

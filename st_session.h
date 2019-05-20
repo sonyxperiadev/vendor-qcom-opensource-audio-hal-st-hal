@@ -136,6 +136,7 @@ struct st_session {
     int rc_config_update_counter;
     bool detection_requested;
     uint32_t conf_levels_intf_version;
+    FILE *lab_fp;
 };
 
 /*

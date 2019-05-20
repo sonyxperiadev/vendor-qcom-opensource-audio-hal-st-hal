@@ -109,6 +109,7 @@ struct sound_trigger_device;
 #define PARAM_DET_EVENT_TYPE_BIT (1 << 6)
 #define PARAM_LAB_CONTROL_BIT (1 << 7)
 #define PARAM_REQUEST_DETECTION_BIT (1 << 8)
+#define PARAM_LAB_DAM_CFG_BIT (1 << 9)
 #define PARAM_ID_MANDATORY_BITS \
     (PARAM_LOAD_SOUND_MODEL_BIT | PARAM_UNLOAD_SOUND_MODEL_BIT)
 
@@ -164,6 +165,7 @@ enum {
     ST_DEVICE_HANDSET_DMIC_LPI,
     ST_DEVICE_HANDSET_TMIC_LPI,
     ST_DEVICE_HANDSET_QMIC_LPI,
+    ST_DEVICE_HEADSET_MIC_LPI,
     ST_DEVICE_HANDSET_6MIC_LPI,
     ST_DEVICE_HANDSET_8MIC_LPI,
     ST_DEVICE_MAX,
@@ -221,6 +223,7 @@ enum st_param_id_type {
     DET_EVENT_TYPE,
     LAB_CONTROL,
     REQUEST_DETECTION,
+    LAB_DAM_CFG,
     MAX_PARAM_IDS
 };
 
@@ -229,6 +232,11 @@ struct st_module_param_info {
     unsigned int instance_id;
     unsigned int param_id;
 };
+
+struct lab_dam_cfg_payload {
+    uint32_t minor_version;
+    uint32_t token_id;
+}__packed;
 
 typedef enum {
     ST_PROFILE_TYPE_NONE, /* Connect LSM to AFE directly */
@@ -260,6 +268,11 @@ enum st_bad_mic_ch_index {
                                     BAD_MIC_CH_INDEX_2 |
                                     BAD_MIC_CH_INDEX_3),
 };
+
+typedef enum st_shared_buf_fmt {
+    ST_SHARED_BUF_PROCESSED,
+    ST_SHARED_BUF_RAW,
+} st_shared_buf_fmt_t;
 
 /* soundmodel library wrapper functions */
 typedef int (*smlib_generate_sound_trigger_phrase_recognition_event_t)
@@ -294,6 +307,7 @@ struct st_lsm_params {
     st_exec_mode_t exec_mode;
     int app_type;
     int in_channels;
+    int in_channels_lpi;
     int param_tag_tracker;
     struct st_module_param_info params[MAX_PARAM_IDS];
     st_profile_type_t adm_cfg_profile;
@@ -319,6 +333,12 @@ typedef enum {
     ST_SS_USECASE_TYPE_ARM,
     ST_SS_USECASE_TYPE_LSM
 } st_ss_usecase_type_t;
+
+typedef enum {
+    ST_PLATFORM_LPI_NONE,
+    ST_PLATFORM_LPI_ENABLE,
+    ST_PLATFORM_LPI_DISABLE
+} st_platform_lpi_enable_t;
 
 struct st_ss_usecase {
     union {
@@ -377,6 +397,8 @@ struct st_vendor_info {
     st_exec_mode_config_t exec_mode_cfg;
     bool lpi_enable;
     bool vad_enable;
+    struct lab_dam_cfg_payload lab_dam_cfg_payload;
+    st_shared_buf_fmt_t shared_buf_fmt;
 
     struct listnode gcs_usecase_list; /* list of gcs usecases one entry per uid */
     struct listnode lsm_usecase_list;
@@ -607,6 +629,13 @@ int platform_stdev_get_backend_channel_count
 (
    void *platform,
    const struct st_vendor_info *v_info
+);
+
+int platform_stdev_set_shared_buf_fmt
+(
+   void *platform,
+   int pcm_id,
+   int shared_buf_fmt
 );
 
 int platform_stdev_send_stream_app_type_cfg

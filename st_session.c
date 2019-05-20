@@ -161,7 +161,7 @@ struct st_session_ev {
     } payload;
 };
 
-ST_DBG_DECLARE(FILE *lab_fp = NULL; static int file_cnt = 0);
+ST_DBG_DECLARE(static int file_cnt = 0);
 
 void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
 {
@@ -278,22 +278,13 @@ static int start_hw_session(st_session_t *st_ses, st_hw_session_t *hw_ses, bool 
     int status = 0, err = 0;
 
     /*
-     * Force reload sound model if LPI enabled for BackEnd but not for session.
-     * Note:
-     * 1. FE LPI enabled + BE LPI disabled is supported in ADSP
-     *    and if needed used to simplify concurrency handling, But
-     *    FE LPI disabled + BE LPI enabled is not supported in ADSP
-     *    and hence cannot be used to simplify concurrency handling.
-     * 2. When ever possible FE LPI mode is kept enabled, but due to
-     *    LPI memory constraints, a session would need to be loaded
-     *    with FE LPI disabled when system session count exceeds
-     *    max that can be supported in LPI mode, these sessions when
-     *    continued beyond unloading of any other session, triggering
-     *    BE LPI to be enabled again, would need this handling.
+     * It is possible the BE LPI mode has been updated, but not the FE mode.
+     * DSP requires both FE and BE to be in the same mode for any configuration
+     * changes between LPI and non-LPI switch, so update the FE mode to the
+     * same as BE mode by re-opening LSM session.
      */
-    if ((st_ses->hw_ses_adsp == hw_ses) && hw_ses->stdev->lpi_enable &&
-        st_ses->vendor_uuid_info->lpi_enable && !hw_ses->lpi_enable) {
-        hw_ses->lpi_enable = true;
+    if (hw_ses->lpi_enable != hw_ses->stdev->lpi_enable) {
+        hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
         if (!load_sm) {
             load_sm = true;
             status = hw_ses->fptrs->dereg_sm(hw_ses, st_ses->lab_enabled);
@@ -430,8 +421,13 @@ static int restart_session(st_session_t *st_ses, st_hw_session_t *hw_ses)
     if (status == 0) {
         st_ses->hw_session_started = true;
     } else {
-        ALOGE("%s:[%d] failed to restart", __func__, st_ses->sm_handle);
-        st_ses->hw_session_started = false;
+        ALOGE("%s:[%d] failed to restart, stop session", __func__, st_ses->sm_handle);
+        /*
+         * lower layers like gcs/lsm need to handle double stop calls properly
+         * to avoid possible crash, as some of the clean ups are already issued
+         * during fptrs->restart() when it's failed.
+         */
+        stop_hw_session(st_ses, hw_ses, true);
     }
     return status;
 }
@@ -726,7 +722,7 @@ static int loaded_state_fn(st_session_t *st_ses, st_session_ev_t *ev)
                     if (status) {
                         ALOGE("%s: Failed to start second stage session, exiting", __func__);
                         status = -EINVAL;
-                        goto cleanup;
+                        break;
                     }
                 }
             }
@@ -872,13 +868,6 @@ static int loaded_state_fn(st_session_t *st_ses, st_session_ev_t *ev)
     };
 
     return status;
-
-cleanup:
-    list_for_each_safe(node, tmp_node, &st_ses->second_stage_list) {
-        st_sec_stage = node_to_item(node, st_arm_second_stage_t, list_node);
-        st_second_stage_module_deinit(st_sec_stage);
-    }
-    return status;
 }
 
 static int active_state_fn(st_session_t *st_ses, st_session_ev_t *ev)
@@ -960,11 +949,11 @@ static int active_state_fn(st_session_t *st_ses, st_session_ev_t *ev)
                  * internally from SSR.
                  */
                 status = 0;
+                break;
             } else {
                 ALOGE("%s:[%d] failed to stop session, err %d", __func__,
                     st_ses->sm_handle, status);
             }
-            break;
         }
 
         STATE_TRANSITION(st_ses, loaded_state_fn);
@@ -1009,7 +998,7 @@ static int active_state_fn(st_session_t *st_ses, st_session_ev_t *ev)
              * callback it will be handled by one of the two states below
              */
             if (!status && st_ses->lab_enabled) {
-                ST_DBG_FILE_OPEN_WR(lab_fp, ST_DEBUG_DUMP_LOCATION, "lab_capture",
+                ST_DBG_FILE_OPEN_WR(st_ses->lab_fp, ST_DEBUG_DUMP_LOCATION, "lab_capture",
                     "bin", file_cnt++);
                 STATE_TRANSITION(st_ses, buffering_state_fn);
             } else {
@@ -1382,7 +1371,7 @@ static int buffering_state_fn(st_session_t *st_ses, st_session_ev_t *ev)
         /* Note: this function may block if there is no PCM data ready*/
         hw_ses->fptrs->read_pcm(hw_ses, ev->payload.readpcm.out_buff,
             ev->payload.readpcm.out_buff_size);
-        ST_DBG_FILE_WRITE(lab_fp, ev->payload.readpcm.out_buff,
+        ST_DBG_FILE_WRITE(st_ses->lab_fp, ev->payload.readpcm.out_buff,
             ev->payload.readpcm.out_buff_size);
         break;
     case ST_SES_EV_END_BUFFERING:
@@ -1430,7 +1419,7 @@ static int buffering_state_fn(st_session_t *st_ses, st_session_ev_t *ev)
             ALOGE("%s:[%d] failed to stop session, err %d", __func__,
                 st_ses->sm_handle, status);
 
-        ST_DBG_FILE_CLOSE(lab_fp);
+        ST_DBG_FILE_CLOSE(st_ses->lab_fp);
         STATE_TRANSITION(st_ses, loaded_state_fn);
         break;
 
@@ -1480,15 +1469,7 @@ static int buffering_state_fn(st_session_t *st_ses, st_session_ev_t *ev)
             if (st_ses->stdev->ssr_offline_received) {
                 if (st_ses->enable_second_stage)
                     stop_second_stage_session(st_ses);
-                /*
-                 * if restart failed during SSR, needs to reset the st
-                 * device to make sure that it can be brought up again
-                 * when SSR online is received.
-                 */
-                if (ev->ev_id == ST_SES_EV_RESTART)
-                    stop_session(st_ses, hw_ses, true);
-                else
-                    hw_ses->fptrs->dereg_sm(hw_ses, st_ses->lab_enabled);
+                hw_ses->fptrs->dereg_sm(hw_ses, st_ses->lab_enabled);
                 st_ses->client_req_state = ST_STATE_ACTIVE;
                 STATE_TRANSITION(st_ses, ssr_state_fn);
                 /* Send success to client because the failure is recovered
@@ -3356,6 +3337,7 @@ int st_session_init(st_session_t *st_ses, struct sound_trigger_device *stdev,
     st_ses->exec_mode = exec_mode;
     st_ses->sm_handle = sm_handle;
     st_ses->ssr_transit_exec_mode = ST_EXEC_MODE_NONE;
+    st_ses->lab_fp = NULL;
 
     /* start in idle state */
     STATE_TRANSITION(st_ses, idle_state_fn);

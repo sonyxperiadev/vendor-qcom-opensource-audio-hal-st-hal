@@ -88,6 +88,7 @@ typedef struct st_arm_second_stage {
     struct st_second_stage_info *ss_info;
     struct listnode list_node;
     struct st_arm_ss_session *ss_session;
+    FILE *dump_fp;
 }st_arm_second_stage_t;
 
 typedef struct st_arm_ss_session {
