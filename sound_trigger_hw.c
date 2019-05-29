@@ -304,6 +304,11 @@ static int check_and_transit_cpe_ses_to_ape(st_session_t *cur_ses)
      */
     ALOGD("%s: enter: current ses %p", __func__, cur_ses);
 
+    if (stdev->platform_lpi_enable != ST_PLATFORM_LPI_NONE) {
+        ret = 0;
+        goto exit;
+    }
+
     if (0 == get_num_sessions_in_exec_mode(ST_EXEC_MODE_CPE)) {
         ret = 0;
         goto exit;
@@ -458,6 +463,11 @@ static int check_and_transit_ape_ses_to_cpe(st_session_t *cur_ses)
      *    cur_ses.
      */
     ALOGD("%s: enter: current ses %p", __func__, cur_ses);
+
+    if (stdev->platform_lpi_enable != ST_PLATFORM_LPI_NONE) {
+        ret = 0;
+        goto exit;
+    }
 
     if (0 == get_num_sessions_in_exec_mode(ST_EXEC_MODE_ADSP)) {
         ret = 0;

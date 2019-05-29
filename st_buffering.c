@@ -103,7 +103,6 @@ void st_buffer_deinit(st_buffer_t *buf_obj)
         }
         pthread_mutex_destroy(&buf_obj->lock);
         free(buf_obj);
-        buf_obj = NULL;
     }
 }
 

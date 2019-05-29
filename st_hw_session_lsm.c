@@ -235,12 +235,16 @@ static int lsm_set_session_data_v2(st_hw_session_t *p_ses)
         (v_info->app_type == 0) ?
         p_lsm_ses->lsm_usecase->app_type : v_info->app_type;
     ses_data.stage_info[stage_idx].lpi_enable = p_ses->lpi_enable;
+    ALOGD("%s: Sending lpi_enable = %s to LSM", __func__,
+        p_ses->lpi_enable ? "true" : "false");
 
     list_for_each(node, &p_ses->lsm_ss_cfg_list) {
         ss_cfg = node_to_item(node, st_lsm_ss_config_t, list_node);
         stage_idx++;
         ses_data.stage_info[stage_idx].app_type = ss_cfg->params->app_type;
         ses_data.stage_info[stage_idx].lpi_enable = ss_cfg->params->lpi_enable;
+        ALOGD("%s: Sending lpi_enable = %s to LSM for stage_idx %d", __func__,
+            ss_cfg->params->lpi_enable ? "true" : "false", stage_idx);
     }
 
     ATRACE_BEGIN("sthal:lsm: pcm_ioctl sndrv_lsm_set_session_data_v2");
@@ -1673,6 +1677,7 @@ static int deallocate_lab_buffers_ape(st_hw_session_lsm_t* p_ses)
 {
     ALOGVV("%s:[%d] Enter", __func__, p_ses->common.sm_handle);
     st_buffer_deinit(p_ses->common.buffer);
+    p_ses->common.buffer = NULL;
     if (p_ses->lab_drv_buf) {
         free(p_ses->lab_drv_buf);
         p_ses->lab_drv_buf = NULL;
@@ -1694,6 +1699,7 @@ static int deallocate_lab_buffers_cpe(st_hw_session_lsm_t* p_ses)
         p_ses->dec_buf = NULL;
     }
     st_buffer_deinit(p_ses->common.buffer);
+    p_ses->common.buffer = NULL;
     if (p_ses->lab_drv_buf) {
         free(p_ses->lab_drv_buf);
         p_ses->lab_drv_buf = NULL;
@@ -1862,8 +1868,15 @@ static int allocate_lab_buffers_ape(st_hw_session_lsm_t* p_lsm_ses)
                         p_lsm_ses->common.config.channels *
                         (pcm_format_to_bits(p_lsm_ses->common.config.format) >> 3));
 
-    circ_buff_sz = ((v_info->kw_duration +
-        v_info->client_capture_read_delay) * rt_bytes_one_sec) / 1000;
+    if ((p_lsm_ses->common.client_req_hist_buf +
+         p_lsm_ses->common.client_req_preroll) > v_info->kw_duration) {
+        circ_buff_sz = ((p_lsm_ses->common.client_req_hist_buf +
+            p_lsm_ses->common.client_req_preroll +
+            v_info->client_capture_read_delay) * rt_bytes_one_sec) / 1000;
+    } else {
+        circ_buff_sz = ((v_info->kw_duration +
+            v_info->client_capture_read_delay) * rt_bytes_one_sec) / 1000;
+    }
     p_lsm_ses->common.buffer = st_buffer_init(circ_buff_sz);
     if (!p_lsm_ses->common.buffer) {
         ALOGE("%s: failed to allocate circ buffer", __func__);

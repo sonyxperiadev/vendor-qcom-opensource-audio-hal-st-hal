@@ -4045,11 +4045,14 @@ void platform_stdev_reset_backend_cfg(void *platform)
     my_data->codec_backend_cfg.lpi_enable = false;
     ctl = mixer_get_ctl_by_name(stdev->mixer,
         my_data->codec_backend_cfg.lpi_mixer_ctl);
-    if (!ctl)
+    if (!ctl) {
         ALOGV("%s: Could not get ctl for mixer command - %s",
-              __func__, my_data->codec_backend_cfg.lpi_mixer_ctl);
-    else
+            __func__, my_data->codec_backend_cfg.lpi_mixer_ctl);
+    } else {
+        ALOGD("%s: Setting %s to false",
+            __func__, my_data->codec_backend_cfg.lpi_mixer_ctl);
         mixer_ctl_set_value(ctl, 0, (int)false);
+    }
 
     my_data->codec_backend_cfg.vad_enable = false;
     my_data->codec_backend_cfg.vad_preroll = 0;
@@ -5048,6 +5051,9 @@ static int check_and_set_codec_backend_cfg
         ctl = mixer_get_ctl_by_name(stdev->mixer,
                  my_data->codec_backend_cfg.lpi_mixer_ctl);
         if (ctl) {
+            ALOGD("%s: Setting %s to %s",
+                __func__, my_data->codec_backend_cfg.lpi_mixer_ctl,
+                lpi_enable ? "true" : "false");
             mixer_ctl_set_value(ctl, 0, (int)lpi_enable);
             *backend_cfg_change = true;
             set_sample_rate = my_data->codec_backend_cfg.lpi_enable;

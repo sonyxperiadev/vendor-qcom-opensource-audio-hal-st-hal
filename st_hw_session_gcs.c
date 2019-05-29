@@ -1072,6 +1072,7 @@ static int dereg_sm_params(st_hw_session_t *p_ses)
     }
 
     st_buffer_deinit(p_ses->buffer);
+    p_ses->buffer = NULL;
 
     return status;
 }
