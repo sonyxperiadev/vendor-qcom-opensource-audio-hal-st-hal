@@ -3650,6 +3650,7 @@ static void *aggregator_thread_loop(void *st_session)
     struct timespec tspec = {0};
     struct sound_trigger_recognition_event *event = NULL;
     bool capture_requested = false;
+    uint64_t callback_time = 0;
 
     ALOGV("%s: Enter", __func__);
 
@@ -3752,8 +3753,12 @@ static void *aggregator_thread_loop(void *st_session)
                 callback = stc_ses->callback;
                 capture_requested = stc_ses->rc_config->capture_requested;
                 cookie = stc_ses->cookie;
+                callback_time = get_current_time_ns();
                 ALOGD("%s:[c%d] Second stage detected successfully, "
                     "calling client callback", __func__, stc_ses->sm_handle);
+                ALOGD("%s: Total sthal processing time: %llums", __func__,
+                    (callback_time - st_ses->detection_event_time) /
+                    NSECS_PER_MSEC);
                 pthread_mutex_unlock(&st_ses->lock);
                 ATRACE_BEGIN("sthal: client detection callback");
                 callback(event, cookie);
@@ -4504,6 +4509,8 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         break;
 
     case ST_SES_EV_DETECTED:
+
+        st_ses->detection_event_time = get_current_time_ns();
         /*
          * Find which client is this detection for.
          * Note that only one keyword detection can happen at a time.
