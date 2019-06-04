@@ -121,6 +121,11 @@ static int stop_recognition_l(st_session_t *st_session)
         free(st_session->rc_config);
         st_session->rc_config = NULL;
     }
+    if (st_session->st_conf_levels) {
+        free(st_session->st_conf_levels);
+        st_session->st_conf_levels = NULL;
+    }
+
     pthread_mutex_unlock(&st_session->lock);
     stdev_reconfig_backend_on_stop(st_session);
     return status;
@@ -339,7 +344,7 @@ static int check_and_transit_cpe_ses_to_ape(st_session_t *cur_ses)
         p_ses = node_to_item(node, st_session_t, list_node);
         if (p_ses->exec_mode == ST_EXEC_MODE_CPE) {
             /* check for sessions to keep on WDSP mode if requested by APP */
-            if (ST_HW_SESS_DET_LOW_POWER_MODE == p_ses->hw_ses_current->client_req_det_mode) {
+            if (ST_DET_LOW_POWER_MODE == p_ses->client_req_det_mode) {
                 ALOGV("%s:[%d] session is requested on WDSP mode, skip",
                        __func__, p_ses->sm_handle);
                 continue;
@@ -348,9 +353,9 @@ static int check_and_transit_cpe_ses_to_ape(st_session_t *cur_ses)
             if (cur_ses && (cur_ses != p_ses) &&
                 !platform_stdev_check_backends_match(stdev->platform,
                                                   cur_ses->exec_mode,
-                                  cur_ses->hw_ses_current->st_device,
+                    cur_ses->hw_proxy_ses->hw_ses_current->st_device,
                                                     p_ses->exec_mode,
-                                   p_ses->hw_ses_current->st_device)) {
+                    p_ses->hw_proxy_ses->hw_ses_current->st_device)) {
                 ALOGV("%s:[%d] session not sharing backend",
                        __func__, p_ses->sm_handle);
                 continue;
@@ -400,7 +405,7 @@ static int check_and_transit_cpe_ses_to_ape(st_session_t *cur_ses)
         p_ses = node_to_item(node, st_session_t, transit_list_node);
 
         if (p_ses->sm_type == SOUND_MODEL_TYPE_KEYPHRASE)
-            update_available_phrase_info(p_ses, p_ses->sm_data, true);
+            update_available_phrase_info(p_ses, p_ses->phrase_sm, true);
 
         ALOGD("%s:[%d] switch session to NONE", __func__, p_ses->sm_handle);
         ret = st_session_set_exec_mode(p_ses, ST_EXEC_MODE_NONE);
@@ -432,7 +437,7 @@ static int check_and_transit_cpe_ses_to_ape(st_session_t *cur_ses)
         }
 
         if (p_ses->sm_type == SOUND_MODEL_TYPE_KEYPHRASE)
-            update_available_phrase_info(p_ses, p_ses->sm_data, false);
+            update_available_phrase_info(p_ses, p_ses->phrase_sm, false);
     }
 
 ssr_exit:
@@ -502,7 +507,7 @@ static int check_and_transit_ape_ses_to_cpe(st_session_t *cur_ses)
         p_ses = node_to_item(node, st_session_t, list_node);
         if (p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
             /* check for sessions to keep on ADSP mode if requested by APP */
-            if (ST_HW_SESS_DET_HIGH_PERF_MODE == p_ses->hw_ses_current->client_req_det_mode) {
+            if (ST_DET_HIGH_PERF_MODE == p_ses->client_req_det_mode) {
                 ALOGV("%s:[%d] session is requested on ADSP mode, skip",
                        __func__, p_ses->sm_handle);
                 continue;
@@ -511,9 +516,9 @@ static int check_and_transit_ape_ses_to_cpe(st_session_t *cur_ses)
             if (cur_ses && (cur_ses != p_ses) &&
                 !platform_stdev_check_backends_match(stdev->platform,
                                                   cur_ses->exec_mode,
-                                  cur_ses->hw_ses_current->st_device,
+                    cur_ses->hw_proxy_ses->hw_ses_current->st_device,
                                                     p_ses->exec_mode,
-                                   p_ses->hw_ses_current->st_device)) {
+                    p_ses->hw_proxy_ses->hw_ses_current->st_device)) {
                 ALOGV("%s:[%d] session not sharing backend",
                        __func__, p_ses->sm_handle);
                 continue;
@@ -563,7 +568,7 @@ static int check_and_transit_ape_ses_to_cpe(st_session_t *cur_ses)
         p_ses = node_to_item(node, st_session_t, transit_list_node);
 
         if (p_ses->sm_type == SOUND_MODEL_TYPE_KEYPHRASE)
-            update_available_phrase_info(p_ses, p_ses->sm_data, true);
+            update_available_phrase_info(p_ses, p_ses->phrase_sm, true);
 
         ALOGD("%s:[%d] switch session to NONE", __func__, p_ses->sm_handle);
         ret = st_session_set_exec_mode(p_ses, ST_EXEC_MODE_NONE);
@@ -595,7 +600,7 @@ static int check_and_transit_ape_ses_to_cpe(st_session_t *cur_ses)
         }
 
         if (p_ses->sm_type == SOUND_MODEL_TYPE_KEYPHRASE)
-            update_available_phrase_info(p_ses, p_ses->sm_data, false);
+            update_available_phrase_info(p_ses, p_ses->phrase_sm, false);
     }
 
 ssr_exit:
@@ -736,15 +741,16 @@ static void handle_audio_ec_ref_enabled(audio_event_info_t* config)
     ALOGD("%s: Exit audio ec ref=%d", __func__, stdev->audio_ec_enabled);
 }
 
-static void handle_audio_concurrency(audio_event_type_t event_type, audio_event_info_t* config)
+static void handle_audio_concurrency(audio_event_type_t event_type,
+    audio_event_info_t* config)
 {
     struct listnode *p_ses_node = NULL;
     st_session_t *p_ses = NULL;
     bool conc_allowed = false;
     unsigned int num_sessions = 0;
 
-    ALOGV_IF(config != NULL, "%s: Enter, event type = %d, audio device = %d", __func__,
-                        event_type, config->device_info.device);
+    ALOGV_IF(config != NULL, "%s: Enter, event type = %d, audio device = %d",
+             __func__, event_type, config->device_info.device);
 
     /*
     UC1:
@@ -859,6 +865,7 @@ static void handle_audio_concurrency(audio_event_type_t event_type, audio_event_
      */
     stdev->lpi_enable = st_hw_check_lpi_support(stdev, p_ses);
     stdev->vad_enable = st_hw_check_vad_support(stdev, p_ses, stdev->lpi_enable);
+
     if (stdev->lpi_enable != platform_get_lpi_mode(stdev->platform) &&
         !is_any_session_buffering()) {
         list_for_each(p_ses_node, &stdev->sound_model_list) {
@@ -1432,7 +1439,7 @@ static bool compare_recognition_config
    struct sound_trigger_recognition_config *new_config
 )
 {
-    unsigned int i, j;
+    unsigned int i = 0, j = 0;
 
     /*
      * Sometimes if the number of user confidence levels is 0, the
@@ -1581,7 +1588,8 @@ exit:
     return status;
 }
 
-static void deallocate_arm_second_stage_session(struct st_arm_second_stage *st_sec_stage)
+static void deallocate_arm_second_stage_session(
+   struct st_arm_second_stage *st_sec_stage)
 {
     if (st_sec_stage) {
         if (st_sec_stage->ss_info) {
@@ -1650,8 +1658,6 @@ static int check_and_configure_second_stage_models
     uint32_t i;
     uint8_t *sound_model;
 
-    list_init(&st_ses->second_stage_list);
-
     for (i = 0; i < num_models; i++) {
         big_sm = (SML_BigSoundModelTypeV3 *)(sm_payload + sizeof(SML_GlobalHeaderType) +
             sizeof(SML_HeaderTypeV3) + (i * sizeof(SML_BigSoundModelTypeV3)));
@@ -1677,7 +1683,7 @@ static int check_and_configure_second_stage_models
                 memcpy(st_sec_stage->ss_session->sound_model, sound_model, big_sm->size);
                 memcpy((char *)st_sec_stage->ss_info, (char *)&ss_usecase.arm->common_params,
                     sizeof(struct st_second_stage_info));
-
+                st_sec_stage->stdev = st_ses->stdev;
                 list_add_tail(&st_ses->second_stage_list, &st_sec_stage->list_node);
                 ALOGD("%s: Added second stage session of type %d", __func__,
                     st_sec_stage->ss_info->sm_detection_type);
@@ -1704,7 +1710,8 @@ static int check_and_configure_second_stage_models
 
                 ss_cfg->params = ss_usecase.lsm;
                 ss_cfg->ss_info = &ss_usecase.lsm->common_params;
-                list_add_tail(&st_ses->hw_ses_adsp->lsm_ss_cfg_list, &ss_cfg->list_node);
+                list_add_tail(&st_ses->hw_proxy_ses->hw_ses_adsp->lsm_ss_cfg_list,
+                    &ss_cfg->list_node);
                 ALOGD("%s: Added second stage lsm usecase with sm id %d", __func__, big_sm->type);
             } else if (ss_usecase.type == ST_SS_USECASE_TYPE_NONE) {
                 ALOGE("%s: No matching usecase in sound trigger platform for sm_id %d",
@@ -1714,8 +1721,6 @@ static int check_and_configure_second_stage_models
             }
         }
     }
-    if (!list_empty(&st_ses->second_stage_list))
-        st_ses->enable_second_stage = true;
 
     return 0;
 
@@ -1731,8 +1736,8 @@ exit:
 static int get_gmm_model(struct sound_trigger_sound_model **common_sm,
                                        uint8_t *sm_payload, uint32_t num_models)
 {
-    SML_BigSoundModelTypeV3 *big_sm;
-    uint32_t i;
+    SML_BigSoundModelTypeV3 *big_sm = NULL;
+    uint32_t i = 0;
     int status = 0;
 
     for (i = 0; i < num_models; i++) {
@@ -1924,45 +1929,52 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
 
     *handle = android_atomic_inc(&stdev->session_id);
 
-    ALOGD("%s: calling st_session_init with st_session ptr %p", __func__, st_session);
+    ALOGD("%s:[%d] calling st_session_init", __func__, *handle);
     status = st_session_init(st_session, stdev, exec_mode, *handle);
     if (status) {
-        ALOGE("%s: failed to initialize st_session with error %d", __func__, status);
+        ALOGE("%s: failed to initialize st_session with error %d", __func__,
+              status);
         goto exit_1;
     }
 
-    /* Parse second stage sound models and populate the second stage list for this session. */
-    st_session->enable_second_stage = false;
+    /*
+     * Parse second stage sound models and populate the second stage list for
+     * this session.
+     */
+    list_init(&st_session->second_stage_list);
     if (sm_version == SML_MODEL_V3) {
-        status = check_and_configure_second_stage_models(st_session, sm_payload, num_models,
-            phrase_sm->phrases[0].recognition_mode);
+        status = check_and_configure_second_stage_models(st_session, sm_payload,
+            num_models, phrase_sm->phrases[0].recognition_mode);
         if (status) {
             ALOGE("%s: Failed to set the second stage list", __func__);
             goto exit_2;
         }
     }
 
-    if (st_session->enable_second_stage) {
-        ALOGD("%s: calling st_session_ss_init with st_session ptr %p", __func__, st_session);
+    if (!list_empty(&st_session->second_stage_list)) {
+        ALOGD("%s: calling st_session_ss_init ", __func__);
         status = st_session_ss_init(st_session);
         if (status) {
-            ALOGE("%s: failed to initialize st_session second stage, error %d", __func__, status);
+            ALOGE("%s: failed to initialize st_session second stage,"
+                  "error %d", __func__, status);
             goto exit_2;
         }
     }
 
-    /* Store the sound model information for handling SSR
-       and interaction with smlib */
-    st_session->sm_data = calloc(1, sm_size);
-    if (!st_session->sm_data) {
+    /*
+     * Store the sound model information for handling SSR
+     * and interaction with smlib
+     */
+    st_session->phrase_sm = calloc(1, sm_size);
+    if (!st_session->phrase_sm) {
         status = -ENOMEM;
         goto exit_3;
     }
 
     if (sound_model->type == SOUND_MODEL_TYPE_KEYPHRASE) {
-        memcpy(st_session->sm_data, (char *)phrase_sm, sizeof(*phrase_sm));
-        st_session->sm_data->common.data_offset = sizeof(*phrase_sm);
-        memcpy((char *)st_session->sm_data + sizeof(*phrase_sm),
+        memcpy(st_session->phrase_sm, (char *)phrase_sm, sizeof(*phrase_sm));
+        st_session->phrase_sm->common.data_offset = sizeof(*phrase_sm);
+        memcpy((char *)st_session->phrase_sm + sizeof(*phrase_sm),
                (char *)phrase_sm + phrase_sm->common.data_offset,
                phrase_sm->common.data_size);
         /* TODO: SVA doesn't support per keyword recognition mode.
@@ -1971,16 +1983,18 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
          */
         st_session->recognition_mode = phrase_sm->phrases[0].recognition_mode;
         ALOGD("%s: sm magic number 0x%x rm %d", __func__,
-              ((int *)((char *)st_session->sm_data + phrase_sm->common.data_offset))[0],
+              ((int *)((char *)st_session->phrase_sm +
+                       phrase_sm->common.data_offset))[0],
               phrase_sm->phrases[0].recognition_mode);
     } else {
         st_session->recognition_mode = RECOGNITION_MODE_VOICE_TRIGGER;
-        memcpy(st_session->sm_data, (char *)common_sm, sizeof(*common_sm));
-        memcpy((char *)st_session->sm_data + common_sm->data_offset,
+        memcpy(st_session->phrase_sm, (char *)common_sm, sizeof(*common_sm));
+        memcpy((char *)st_session->phrase_sm + common_sm->data_offset,
                (char *)common_sm + common_sm->data_offset,
                common_sm->data_size);
         ALOGD("%s: sm magic number 0x%x", __func__,
-              ((int *)((char *)st_session->sm_data + common_sm->data_offset))[0]);
+              ((int *)((char *)st_session->phrase_sm +
+                       common_sm->data_offset))[0]);
     }
 
     st_session->sm_type = sound_model->type;
@@ -2027,9 +2041,9 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
     return 0;
 
 exit_3:
-    if (st_session->sm_data != NULL)
-        free(st_session->sm_data);
-    if (st_session->enable_second_stage)
+    if (st_session->phrase_sm != NULL)
+        free(st_session->phrase_sm);
+    if (!list_empty(&st_session->second_stage_list))
         st_session_ss_deinit(st_session);
 
 exit_2:
@@ -2040,16 +2054,17 @@ exit_1:
 
 exit:
     if (st_session != NULL) {
-        if (st_session->enable_second_stage) {
-            list_for_each_safe(node, tmp_node, &st_session->second_stage_list) {
-                st_sec_stage = node_to_item(node, st_arm_second_stage_t, list_node);
-                list_remove(&st_sec_stage->list_node);
-                deallocate_arm_second_stage_session(st_sec_stage);
-            }
+        list_for_each_safe(node, tmp_node, &st_session->second_stage_list) {
+            st_sec_stage = node_to_item(node, st_arm_second_stage_t, list_node);
+            list_remove(&st_sec_stage->list_node);
+            deallocate_arm_second_stage_session(st_sec_stage);
         }
-        if (st_session->hw_ses_adsp) {
-            list_for_each_safe(node, tmp_node, &st_session->hw_ses_adsp->lsm_ss_cfg_list) {
-                st_lsm_ss_config_t *cfg = node_to_item(node, st_lsm_ss_config_t, list_node);
+        if (st_session->hw_proxy_ses &&
+            st_session->hw_proxy_ses->hw_ses_adsp) {
+            list_for_each_safe(node, tmp_node,
+                &st_session->hw_proxy_ses->hw_ses_adsp->lsm_ss_cfg_list) {
+                st_lsm_ss_config_t *cfg =
+                node_to_item(node, st_lsm_ss_config_t, list_node);
                 list_remove(&cfg->list_node);
                 deallocate_lsm_ss_config(cfg);
             }
@@ -2081,12 +2096,12 @@ static int stdev_reconfig_backend_on_stop(st_session_t *stopped_ses)
      */
     st_session_t *best_ses = NULL;
     st_session_t *ses = NULL;
-    struct listnode *ses_node;
+    struct listnode *ses_node = NULL;
     int ses_channel_count = 0;
     int stopped_ses_channel_count = 0;
     int best_channel_count = 0;
     unsigned int stopped_ses_vad_preroll = 0;
-    unsigned int best_vad_preroll = 0;
+    unsigned int best_vad_preroll = 0, preroll = 0;
     bool stopped_ses_lpi_mode = false, is_stopped = false;
 
     if (stopped_ses->exec_mode != ST_EXEC_MODE_ADSP &&
@@ -2110,17 +2125,13 @@ static int stdev_reconfig_backend_on_stop(st_session_t *stopped_ses)
                                                  stopped_v_info);
 
     if ((stopped_ses->exec_mode == ST_EXEC_MODE_ADSP) &&
-        stopped_ses->hw_ses_adsp) {
-        stopped_ses_lpi_mode = stopped_ses->hw_ses_adsp->lpi_enable;
-        stopped_ses_vad_preroll = stopped_ses->hw_ses_current->client_req_preroll;
+        stopped_ses->hw_proxy_ses->hw_ses_adsp) {
+        stopped_ses_lpi_mode = stopped_ses->hw_proxy_ses->hw_ses_adsp->lpi_enable;
+        stopped_ses_vad_preroll = st_session_get_preroll(stopped_ses);
     }
 
     list_for_each(ses_node, &stdev->sound_model_list) {
         ses = node_to_item(ses_node, st_session_t, list_node);
-        ses_channel_count =
-            platform_stdev_get_backend_channel_count(stdev->platform,
-                                                     ses->vendor_uuid_info);
-        ALOGV("%s:[%d] check ses_v_info %p", __func__, ses->sm_handle, ses->vendor_uuid_info);
         if (ses->exec_mode != ST_EXEC_MODE_ADSP &&
             ses->exec_mode != ST_EXEC_MODE_ARM)
             continue;
@@ -2137,9 +2148,17 @@ static int stdev_reconfig_backend_on_stop(st_session_t *stopped_ses)
             continue;
         }
 
-        if ((ses->exec_mode == ST_EXEC_MODE_ADSP) &&
-            (ses->hw_ses_current->client_req_preroll > best_vad_preroll))
-            best_vad_preroll = ses->hw_ses_current->client_req_preroll;
+        ses_channel_count =
+            platform_stdev_get_backend_channel_count(stdev->platform,
+              ses->vendor_uuid_info);
+        ALOGV("%s:[%d] check ses_v_info %p", __func__, ses->sm_handle,
+            ses->vendor_uuid_info);
+
+        if (ses->exec_mode == ST_EXEC_MODE_ADSP) {
+            preroll = st_session_get_preroll(ses);
+            if (preroll > best_vad_preroll)
+                best_vad_preroll = preroll;
+        }
 
         if ((best_ses == NULL) || (ses_channel_count > best_channel_count)) {
             best_ses = ses;
@@ -2184,18 +2203,16 @@ static void stdev_session_event_cb(sound_model_handle_t handle,
                                    st_session_event_id_t event)
 {
     pthread_mutex_lock(&stdev->lock);
-    st_session_t* st_sess = get_sound_trigger_session(stdev, handle);
+    st_session_t* st_ses = get_sound_trigger_session(stdev, handle);
 
-    if (!st_sess)
+    if (!st_ses)
         goto exit;
 
     ALOGV("%s:[%d] event %d", __func__, handle, event);
     switch (event) {
     case ST_SES_EV_DEFERRED_STOP:
-        if (st_sess->pending_stop) {
-            stop_recognition_l(st_sess);
-            st_sess->pending_stop = false;
-        }
+        if (st_ses->pending_stop)
+            stop_recognition_l(st_ses);
         break;
     default:
         break;
@@ -2252,17 +2269,17 @@ static int stdev_unload_sound_model(const struct sound_trigger_hw_device *dev,
     list_remove(&st_session->list_node);
 
     if (st_session->sm_type == SOUND_MODEL_TYPE_KEYPHRASE)
-        update_available_phrase_info(st_session, st_session->sm_data, true);
+        update_available_phrase_info(st_session, st_session->phrase_sm, true);
 
     if (!get_num_sessions())
         stdev->exec_mode = ST_EXEC_MODE_NONE;
 
     pthread_mutex_lock(&st_session->lock);
-    free(st_session->sm_data);
+    free(st_session->phrase_sm);
     pthread_mutex_unlock(&st_session->lock);
 
     run_keep_alive_session(stdev, st_session, ST_EVENT_STOP_KEEP_ALIVE);
-    if (st_session->enable_second_stage) {
+    if (!list_empty(&st_session->second_stage_list)) {
         st_session_ss_deinit(st_session);
         list_for_each_safe(node, tmp_node, &st_session->second_stage_list) {
             st_sec_stage = node_to_item(node, st_arm_second_stage_t, list_node);
@@ -2270,9 +2287,11 @@ static int stdev_unload_sound_model(const struct sound_trigger_hw_device *dev,
             deallocate_arm_second_stage_session(st_sec_stage);
         }
     }
-    if (st_session && st_session->hw_ses_adsp) {
-        list_for_each_safe(node, tmp_node, &st_session->hw_ses_adsp->lsm_ss_cfg_list) {
-            st_lsm_ss_config_t *cfg = node_to_item(node, st_lsm_ss_config_t, list_node);
+    if (st_session && st_session->hw_proxy_ses->hw_ses_adsp) {
+        list_for_each_safe(node, tmp_node,
+            &st_session->hw_proxy_ses->hw_ses_adsp->lsm_ss_cfg_list) {
+            st_lsm_ss_config_t *cfg =
+                node_to_item(node, st_lsm_ss_config_t, list_node);
             list_remove(&cfg->list_node);
             deallocate_lsm_ss_config(cfg);
         }
@@ -2323,25 +2342,12 @@ static int stdev_start_recognition
     }
 
     ALOGV("%s:[%d] About to take session lock", __func__, sound_model_handle);
-    /* lock the session as we are about to change its
-        stored parameters */
     pthread_mutex_lock(&st_session->lock);
-
-    /*
-     *  cancel pending stop notifications to avoid unnecessary
-     *  backend teardown and restart
-     */
-    ALOGV("%s cancel req with handle %d and ev ST_SES_EV_DEFERRED_STOP to cancel",
-          __func__, st_session->sm_handle);
-    hw_session_notifier_cancel(st_session->sm_handle, ST_SES_EV_DEFERRED_STOP);
-    st_session->pending_stop = false;
-
     if (!st_session->rc_config ||
         !compare_recognition_config(config, st_session->rc_config)) {
         config_updated = true;
 
-        ALOGV("%s: received new params for session %d", __func__,
-            st_session->sm_handle);
+        ALOGV("%s:[%d] received new params ", __func__, st_session->sm_handle);
 
         /*
          * Store the recogntion configuration for sending opaque data
@@ -2356,8 +2362,9 @@ static int stdev_start_recognition
          */
         if ((config->data_size <= CUSTOM_CONFIG_OPAQUE_DATA_SIZE) &&
             st_session->vendor_uuid_info->is_qcva_uuid &&
-            st_session->enable_second_stage) {
-            ALOGE("%s: SVA 3.0 rc_config opaque data required, exiting", __func__);
+            !list_empty(&st_session->second_stage_list)) {
+            ALOGE("%s: SVA 3.0 rc_config opaque data required, exiting",
+                  __func__);
             status = -EINVAL;
             goto cleanup;
         }
@@ -2373,7 +2380,8 @@ static int stdev_start_recognition
         memcpy((char *)st_session->rc_config + st_session->rc_config->data_offset,
            (char *)config + config->data_offset, config->data_size);
 
-        ALOGVV("%s: num_phrases=%d, id=%d", __func__, st_session->rc_config->num_phrases,
+        ALOGVV("%s: num_phrases=%d, id=%d", __func__,
+               st_session->rc_config->num_phrases,
                st_session->rc_config->phrases[0].id);
         st_session->callback = callback;
         st_session->cookie = cookie;
@@ -2381,8 +2389,11 @@ static int stdev_start_recognition
         st_session->capture_handle = config->capture_handle;
         st_session->capture_requested = config->capture_requested;
 
-        st_session->rc_config_update_counter++;
-        status = st_hw_ses_update_config(st_session, st_session->hw_ses_current);
+       /*
+        * Must be called before lpi decision with updated config:
+        * preroll, client requested mode etc..
+        */
+        status = st_session_update_recongition_config(st_session);
         if (status) {
             ALOGE("%s: ERROR. updating rc_config, returned status %d",
                   __func__, status);
@@ -2393,8 +2404,9 @@ static int stdev_start_recognition
     if (ST_EXEC_MODE_ADSP == st_session->exec_mode ||
         ST_EXEC_MODE_ARM == st_session->exec_mode) {
         stdev->lpi_enable = st_hw_check_lpi_support(stdev, st_session);
-        stdev->vad_enable = st_hw_check_vad_support(stdev, st_session, stdev->lpi_enable);
-        int vad_preroll = st_session->hw_ses_current->client_req_preroll;
+        stdev->vad_enable = st_hw_check_vad_support(stdev, st_session,
+                                                    stdev->lpi_enable);
+        int vad_preroll = st_session_get_preroll(st_session);
 
         status = platform_stdev_check_and_set_codec_backend_cfg(stdev->platform,
                              st_session->vendor_uuid_info, &backend_cfg_change,
@@ -2437,11 +2449,11 @@ static int stdev_start_recognition
     }
 
     /* Switch session to high performance/low power mode if requested by APP */
-    if ((ST_EXEC_MODE_CPE == st_session->hw_ses_current->exec_mode) &&
-        (ST_HW_SESS_DET_HIGH_PERF_MODE == st_session->hw_ses_current->client_req_det_mode))
+    if ((ST_EXEC_MODE_CPE == st_session->exec_mode) &&
+        (ST_DET_HIGH_PERF_MODE == st_session->client_req_det_mode))
         check_and_transit_cpe_ses_to_ape(st_session);
-    else if ((ST_EXEC_MODE_ADSP == st_session->hw_ses_current->exec_mode) &&
-        (ST_HW_SESS_DET_LOW_POWER_MODE == st_session->hw_ses_current->client_req_det_mode))
+    else if ((ST_EXEC_MODE_ADSP == st_session->exec_mode) &&
+        (ST_DET_LOW_POWER_MODE == st_session->client_req_det_mode))
         check_and_transit_ape_ses_to_cpe(st_session);
 
 cleanup:
@@ -2513,10 +2525,10 @@ static int stdev_close(hw_device_t *device)
         list_remove(node);
         st_session_stop_lab(st_session);
         st_session_stop(st_session);
-        if (st_session->enable_second_stage)
+        if (!list_empty(&st_session->second_stage_list))
             st_session_ss_deinit(st_session);
         st_session_deinit(st_session);
-        free(st_session->sm_data);
+        free(st_session->phrase_sm);
         free(st_session->rc_config);
         free(st_session);
     }
@@ -2766,8 +2778,10 @@ static int stdev_get_param_data(st_session_t *p_ses, audio_event_info_t* config)
     return ret;
 }
 
-/* Audio hal calls this callback for notifying Subsystem restart,
-   lab stop and concurrency events */
+/*
+ * Audio hal calls this callback for notifying Subsystem restart,
+ * lab stop and concurrency events
+ */
 int sound_trigger_hw_call_back(audio_event_type_t event,
                                audio_event_info_t* config)
 {

@@ -73,23 +73,23 @@ typedef union {
 } st_get_param_payload_t;
 
 static int reg_sm(st_hw_session_t* p_ses, void *sm_data,
-           sound_trigger_sound_model_type_t sm_type);
+    unsigned int sm_size,
+    sound_trigger_sound_model_type_t sm_type);
 static int reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mode,
     bool capture_requested, struct sound_trigger_recognition_config *rc_config,
     sound_trigger_sound_model_type_t sm_type, void *sm_data);
 
-static int dereg_sm(st_hw_session_t* p_ses, bool capture_requested);
+static int dereg_sm(st_hw_session_t* p_ses);
 static int dereg_sm_params(st_hw_session_t* p_ses);
 static int start(st_hw_session_t* p_ses);
 static int stop(st_hw_session_t* p_ses);
-static int stop_buffering(st_hw_session_t* p_ses, bool capture_requested);
+static int stop_buffering(st_hw_session_t* p_ses);
 static int set_device(st_hw_session_t *p_ses,
     bool enable);
 static int disable_device(st_hw_session_t *p_ses, bool setting_device);
 static int enable_device(st_hw_session_t *p_ses, bool setting_device);
 static void process_lab_capture(st_hw_session_t *p_ses);
 static int restart(st_hw_session_t* p_ses, unsigned int recognition_mode,
-    bool capture_requested,
     struct sound_trigger_recognition_config *rc_config __unused,
     sound_trigger_sound_model_type_t sm_type, void *sm_data __unused);
 static int read_pcm(st_hw_session_t *p_ses,
@@ -1214,7 +1214,7 @@ static int sound_trigger_set_device
 }
 
 static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
-    sound_trigger_sound_model_type_t sm_type __unused)
+    unsigned int sm_size, sound_trigger_sound_model_type_t sm_type __unused)
 {
     int status = 0;
     st_hw_session_pcm_t *p_pcm_ses =
@@ -1225,10 +1225,6 @@ static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
     int frame_len;
     int sample_rate;
     const char *config_file_path = ST_FFV_CONFIG_FILE_PATH;
-    struct sound_trigger_phrase_sound_model *phrase_sm =
-       (struct sound_trigger_phrase_sound_model*)sm_data;
-    char* sm_buffer = (char *)((unsigned char*)phrase_sm + phrase_sm->common.data_offset);
-    uint32_t sm_size = phrase_sm->common.data_size;
     FfvStatusType status_type;
     EspStatusType esp_status_type;
     int total_mem_size;
@@ -1334,7 +1330,7 @@ static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
     ALOGD("%s: LICENSE[%s] key[%d]", __func__, product_license, product_id);
 
     status_type = ffv_init_fn(&p_pcm_ses->handle, num_tx_in_ch, num_out_ch, num_ec_ref_ch,
-                      frame_len, sample_rate, config_file_path, sm_buffer, sm_size,
+                      frame_len, sample_rate, config_file_path, (char *)sm_data, sm_size,
                       &total_mem_size, product_id, product_license);
     if (status_type) {
         ALOGE("%s: ERROR. ffv_init returned %d", __func__, status_type);
@@ -1400,7 +1396,7 @@ sm_error_1:
     return status;
 }
 
-static int dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
+static int dereg_sm(st_hw_session_t *p_ses)
 {
     int status = 0;
     st_hw_session_pcm_t *p_pcm_ses =
@@ -1444,7 +1440,7 @@ static int dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
                                     false);
 
     /* Deallocate buffers allocated during start_recognition */
-    if (capture_requested) {
+    if (p_ses->lab_enabled) {
         if (p_pcm_ses->lab_buffers_allocated) {
             deallocate_lab_buffers(p_pcm_ses);
         }
@@ -1478,6 +1474,7 @@ static int reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mode _
         if (!p_pcm_ses->lab_buffers_allocated)
             status = allocate_lab_buffers(p_pcm_ses);
     }
+    p_ses->lab_enabled = capture_requested;
 
 error:
     ALOGD("%s:[%d] Exit, status=%d", __func__,
@@ -1645,7 +1642,7 @@ static int stop(st_hw_session_t* p_ses)
     return status;
 }
 
-static int pcm_stop_buffering(st_hw_session_t* p_ses, bool capture_requested)
+static int pcm_stop_buffering(st_hw_session_t* p_ses)
 {
     int status = 0;
     st_hw_session_pcm_t *p_pcm_ses =
@@ -1654,7 +1651,7 @@ static int pcm_stop_buffering(st_hw_session_t* p_ses, bool capture_requested)
     ALOGD("%s:[%d] Enter pcm %p", __func__, p_pcm_ses->common.sm_handle,
         p_pcm_ses->pcm);
 
-    if (capture_requested) {
+    if (p_ses->lab_enabled) {
         pthread_mutex_lock(&p_pcm_ses->lab_out_buf_lock);
         pthread_cond_broadcast(&p_pcm_ses->lab_out_buf_cond);
         pthread_mutex_unlock(&p_pcm_ses->lab_out_buf_lock);
@@ -1679,7 +1676,7 @@ static void check_and_exit_lab(st_hw_session_t *p_ses)
     }
 }
 
-static int stop_buffering(st_hw_session_t* p_ses, bool capture_requested)
+static int stop_buffering(st_hw_session_t* p_ses)
 {
     st_hw_session_pcm_t *p_pcm_ses =
        (st_hw_session_pcm_t *)p_ses;
@@ -1693,14 +1690,13 @@ static int stop_buffering(st_hw_session_t* p_ses, bool capture_requested)
     }
 
     check_and_exit_lab(p_ses);
-    status = pcm_stop_buffering(p_ses, capture_requested);
+    status = pcm_stop_buffering(p_ses);
     CLEAR_STATE(p_ses->state, SES_BUFFERING);
 
     return status;
 }
 
 static int restart(st_hw_session_t* p_ses, unsigned int recognition_mode __unused,
-   bool capture_requested __unused,
    struct sound_trigger_recognition_config *rc_config __unused,
    sound_trigger_sound_model_type_t sm_type __unused, void *sm_data __unused)
 {
