@@ -720,8 +720,9 @@ static int read_pcm_data(st_hw_session_lsm_t *p_ses,
             ALOGVV("%s: waiting on cond, bytes=%d", __func__, bytes);
             /* Time out to unblock read thread in case if write thread is
                stuck filling the buffers */
-            GET_WAIT_TIMESPEC(tspec, convert_bytes_to_ms((requested_bytes * 2),
-                &p_ses->common.config) * NSECS_PER_MSEC);
+            GET_WAIT_TIMESPEC(tspec, convert_bytes_to_ms(
+                (p_ses->lab_drv_buf_size * 4), &p_ses->common.config) *
+                NSECS_PER_MSEC);
             ret = pthread_cond_timedwait(&p_ses->cond, &p_ses->lock, &tspec);
             ALOGVV("%s: done waiting on cond", __func__);
             if (ret) {
