@@ -39,7 +39,7 @@ endif
 
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_SVA_MULTI_STAGE)),true)
     LOCAL_CFLAGS += -DST_MULTI_STAGE_ENABLED
-    LOCAL_HEADER_LIBRARIES += capi_v2_headers
+    LOCAL_C_INCLUDES += $(LOCAL_PATH)/ext_headers
     LOCAL_SRC_FILES += st_second_stage.c
 endif
 
