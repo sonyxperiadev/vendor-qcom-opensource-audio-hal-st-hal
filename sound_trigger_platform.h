@@ -741,6 +741,11 @@ bool platform_stdev_is_hwmad_backend
    st_exec_mode_t exec_mode
 );
 
+bool platform_stdev_is_dedicated_sva_path
+(
+   void *platform
+);
+
 int platform_stdev_derive_mixer_ctl_from_backend
 (
     void *platform,

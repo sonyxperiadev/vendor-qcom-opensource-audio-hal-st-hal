@@ -154,6 +154,7 @@ struct sound_trigger_device {
     bool stop_transitions_thread_loop;
     transit_dir_t transit_dir;
     bool dedicated_sva_path;
+    bool dedicated_headset_path;
     bool disable_hwmad;
     st_platform_lpi_enable_t platform_lpi_enable;
 

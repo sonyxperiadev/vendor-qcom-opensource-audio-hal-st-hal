@@ -784,7 +784,7 @@ static void handle_audio_concurrency(audio_event_type_t event_type, audio_event_
     if (stdev->transit_to_adsp_on_playback)
         check_sessions_transition(event_type);
 
-    if (stdev->dedicated_sva_path) {
+    if (platform_stdev_is_dedicated_sva_path(stdev->platform)) {
         /*
          * When SVA has dedicated tx path, ignore capture events when concurrency
          * is allowed with this capture event.

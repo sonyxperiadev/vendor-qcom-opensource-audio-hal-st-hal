@@ -1969,7 +1969,7 @@ static int sound_trigger_set_device
                  * mixer value in audio route is not reset, so detections won't work
                  * 4. To fix this call audio reset then enable device
                  */
-                if (!p_ses->stdev->dedicated_sva_path &&
+                if (!platform_stdev_is_dedicated_sva_path(p_ses->stdev->platform) &&
                     p_ses->stdev->conc_capture_supported &&
                     p_ses->stdev->reset_backend &&
                     !is_hwmad_device) {
