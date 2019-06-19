@@ -37,7 +37,7 @@
 #define sthw_extn_check_process_det_ev_support() (false)
 #else
 int sthw_extn_process_detection_event_keyphrase(
-    st_session_t *st_ses, uint64_t timestamp, int detect_status,
+    st_proxy_session_t *st_ses, uint64_t timestamp, int detect_status,
     void *payload, size_t payload_size,
     struct sound_trigger_phrase_recognition_event **event);
 bool sthw_extn_check_process_det_ev_support();

@@ -88,6 +88,7 @@ typedef struct st_arm_second_stage {
     struct st_second_stage_info *ss_info;
     struct listnode list_node;
     struct st_arm_ss_session *ss_session;
+    struct sound_trigger_device *stdev;
     FILE *dump_fp;
 }st_arm_second_stage_t;
 
@@ -97,7 +98,7 @@ typedef struct st_arm_ss_session {
     pthread_mutex_t lock;
     pthread_cond_t cond;
     bool exit_thread;
-    struct st_session *st_ses;
+    struct st_proxy_session *st_ses;
 
     /* For CNN to overwrite 1st stage indices */
     uint32_t kw_start_idx;

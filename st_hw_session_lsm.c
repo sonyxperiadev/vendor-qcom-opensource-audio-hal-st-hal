@@ -63,46 +63,45 @@
 #define DOA_POLAR_ACTIVITY_INDICATORS 360
 
 static int ape_reg_sm(st_hw_session_t* p_ses, void *sm_data,
-           sound_trigger_sound_model_type_t sm_type);
+    unsigned int sm_size, sound_trigger_sound_model_type_t sm_type);
 static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mode,
     bool capture_requested, struct sound_trigger_recognition_config *rc_config,
     sound_trigger_sound_model_type_t sm_type, void *sm_data);
 
-static int ape_dereg_sm(st_hw_session_t* p_ses, bool capture_requested);
+static int ape_dereg_sm(st_hw_session_t* p_ses);
 static int ape_dereg_sm_params(st_hw_session_t* p_ses);
 static int ape_start(st_hw_session_t* p_ses);
 static int ape_stop(st_hw_session_t* p_ses);
 static int ape_stop_buffering(st_hw_session_t* p_ses);
 
-static int cpe_reg_sm(st_hw_session_t* p_ses,void *sm_data, sound_trigger_sound_model_type_t sm_type);
+static int cpe_reg_sm(st_hw_session_t* p_ses,void *sm_data, unsigned int sm_size, sound_trigger_sound_model_type_t sm_type);
 static int cpe_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mode,
     bool capture_requested, struct sound_trigger_recognition_config *rc_config,
     sound_trigger_sound_model_type_t sm_type, void *sm_data);
 
-static int cpe_dereg_sm(st_hw_session_t* p_ses, bool capture_requested);
+static int cpe_dereg_sm(st_hw_session_t* p_ses);
 static int cpe_dereg_sm_params(st_hw_session_t* p_ses);
 static int cpe_start(st_hw_session_t* p_ses);
 static int cpe_stop(st_hw_session_t* p_ses);
-static int cpe_stop_buffering(st_hw_session_t *p_ses, bool capture_requested);
+static int cpe_stop_buffering(st_hw_session_t *p_ses);
 
 /* Routing layer functions to route to either ADSP or CPE */
 static int route_reg_sm_ape(st_hw_session_t *p_ses,
-    void *sm_data, sound_trigger_sound_model_type_t sm_type);
+    void *sm_data, unsigned int sm_size, sound_trigger_sound_model_type_t sm_type);
 static int route_reg_sm_params_ape(st_hw_session_t* p_ses,
     unsigned int recognition_mode, bool capture_requested,
     struct sound_trigger_recognition_config *rc_config,
     sound_trigger_sound_model_type_t sm_type, void *sm_data);
-static int route_dereg_sm_ape(st_hw_session_t* p_ses, bool capture_requested);
+static int route_dereg_sm_ape(st_hw_session_t* p_ses);
 static int route_dereg_sm_params_ape(st_hw_session_t* p_ses);
 static int route_restart_ape(st_hw_session_t* p_ses,
                              unsigned int recognition_mode,
-                             bool capture_requested,
                              struct sound_trigger_recognition_config *rc_config,
                              sound_trigger_sound_model_type_t sm_type,
                              void *sm_data);
 static int route_start_ape(st_hw_session_t* p_ses);
 static int route_stop_ape(st_hw_session_t* p_ses);
-static int route_stop_buffering_ape(st_hw_session_t* p_ses, bool capture_requested);
+static int route_stop_buffering_ape(st_hw_session_t* p_ses);
 static int route_set_device_ape(st_hw_session_t* p_ses,
                                 bool enable);
 static int route_read_pcm_ape(st_hw_session_t *p_ses,
@@ -112,19 +111,19 @@ static void route_audio_capture_ape(st_hw_session_t* p_ses);
 static int route_send_custom_chmix_coeff_ape(st_hw_session_t *p_ses, char *str);
 
 static int route_reg_sm_cpe(st_hw_session_t *p_ses,
-    void *sm_data, sound_trigger_sound_model_type_t sm_type);
+    void *sm_data, unsigned int sm_size, sound_trigger_sound_model_type_t sm_type);
 static int route_reg_sm_params_cpe(st_hw_session_t* p_ses,
     unsigned int recognition_mode, bool capture_requested,
     struct sound_trigger_recognition_config *rc_config,
     sound_trigger_sound_model_type_t sm_type, void *sm_data);
-static int route_dereg_sm_cpe(st_hw_session_t* p_ses, bool capture_requested);
+static int route_dereg_sm_cpe(st_hw_session_t* p_ses);
 static int route_dereg_sm_params_cpe(st_hw_session_t* p_ses);
 static int route_start_cpe(st_hw_session_t* p_ses);
 static int route_restart(st_hw_session_t* p_ses, unsigned int recognition_mode,
-   bool capture_requested, struct sound_trigger_recognition_config *rc_config __unused,
+   struct sound_trigger_recognition_config *rc_config __unused,
    sound_trigger_sound_model_type_t sm_type, void *sm_data);
 static int route_stop_cpe(st_hw_session_t* p_ses);
-static int route_stop_buffering_cpe(st_hw_session_t* p_ses, bool capture_requested);
+static int route_stop_buffering_cpe(st_hw_session_t* p_ses);
 static int route_set_device_cpe(st_hw_session_t* p_ses,
                                 bool enable);
 static int route_read_pcm_cpe(st_hw_session_t *p_ses,
@@ -1013,13 +1012,15 @@ void process_raw_lab_data_cpe(st_hw_session_lsm_t *p_lsm_ses)
             convert_ms_to_bytes(
                 p_lsm_ses->common.vendor_uuid_info->kw_start_tolerance,
                 &p_lsm_ses->common.config);
-        if (p_lsm_ses->common.client_req_hist_buf) {
+        if (p_lsm_ses->common.sthw_cfg.client_req_hist_buf) {
             kw_duration_bytes =
-                convert_ms_to_bytes(p_lsm_ses->common.client_req_hist_buf,
+                convert_ms_to_bytes(
+                    p_lsm_ses->common.sthw_cfg.client_req_hist_buf,
                     &p_lsm_ses->common.config);
         } else {
             kw_duration_bytes =
-                convert_ms_to_bytes(p_lsm_ses->common.vendor_uuid_info->kw_duration,
+                convert_ms_to_bytes(
+                    p_lsm_ses->common.vendor_uuid_info->kw_duration,
                     &p_lsm_ses->common.config);
         }
 
@@ -1086,7 +1087,7 @@ void process_raw_lab_data_cpe(st_hw_session_lsm_t *p_lsm_ses)
         }
 
         if (p_lsm_ses->common.enable_second_stage &&
-            !p_lsm_ses->common.client_req_hist_buf)
+            !p_lsm_ses->common.sthw_cfg.client_req_hist_buf)
             p_lsm_ses->move_client_ptr = true;
         else
             p_lsm_ses->move_client_ptr = false;
@@ -1115,7 +1116,7 @@ void process_raw_lab_data_cpe(st_hw_session_lsm_t *p_lsm_ses)
             ALOGE("%s: pcm read failed status %d - %s", __func__, status,
                   pcm_get_error(p_lsm_ses->pcm));
             p_lsm_ses->exit_lab_processing = true;
-            p_lsm_ses->common.fptrs->stop_buffering(&p_lsm_ses->common, true);
+            p_lsm_ses->common.fptrs->stop_buffering(&p_lsm_ses->common);
             pcm_stop(p_lsm_ses->pcm);
             pcm_start(p_lsm_ses->pcm);
             break;
@@ -1359,7 +1360,7 @@ void process_packetized_lab_data(st_hw_session_lsm_t *p_ses)
 exit:
     if (!p_ses->exit_lab_processing) {
         p_ses->exit_lab_processing = true;
-        p_ses->common.fptrs->stop_buffering(&p_ses->common, true);
+        p_ses->common.fptrs->stop_buffering(&p_ses->common);
     }
 
     ST_DBG_FILE_CLOSE(fptr_drv);
@@ -1396,13 +1397,15 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
             convert_ms_to_bytes(
                 p_lsm_ses->common.vendor_uuid_info->kw_start_tolerance,
                 &p_lsm_ses->common.config);
-        if (p_lsm_ses->common.client_req_hist_buf) {
+        if (p_lsm_ses->common.sthw_cfg.client_req_hist_buf) {
             kw_duration_bytes =
-                convert_ms_to_bytes(p_lsm_ses->common.client_req_hist_buf,
+                convert_ms_to_bytes(
+                    p_lsm_ses->common.sthw_cfg.client_req_hist_buf,
                     &p_lsm_ses->common.config);
         } else {
             kw_duration_bytes =
-                convert_ms_to_bytes(p_lsm_ses->common.vendor_uuid_info->kw_duration,
+                convert_ms_to_bytes(
+                    p_lsm_ses->common.vendor_uuid_info->kw_duration,
                     &p_lsm_ses->common.config);
         }
 
@@ -1472,7 +1475,7 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
         }
 
         if (p_lsm_ses->common.enable_second_stage &&
-            !p_lsm_ses->common.client_req_hist_buf)
+            !p_lsm_ses->common.sthw_cfg.client_req_hist_buf)
             p_lsm_ses->move_client_ptr = true;
         else
             p_lsm_ses->move_client_ptr = false;
@@ -1524,6 +1527,7 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
     }
 
     ape_stop_buffering(&p_lsm_ses->common);
+    p_lsm_ses->lab_on_detection = false;
     p_lsm_ses->lab_processing_active = false;
     pthread_cond_broadcast(&p_lsm_ses->cond);
     pthread_mutex_unlock(&p_lsm_ses->lock);
@@ -1647,6 +1651,9 @@ static void *callback_thread_loop(void *context)
                 (void*)params->payload;
             hw_sess_event.payload.detected.payload_size = params->payload_size;
         }
+
+        if (p_lsm_ses->common.lab_enabled)
+            p_lsm_ses->lab_on_detection = true;
 
         ST_DBG_DECLARE(FILE *detect_fd = NULL; static int detect_fd_cnt = 0);
         ST_DBG_FILE_OPEN_WR(detect_fd, ST_DEBUG_DUMP_LOCATION,
@@ -1854,8 +1861,9 @@ static int allocate_lab_buffers_ape(st_hw_session_lsm_t* p_lsm_ses)
     unsigned int rt_bytes_one_sec;
 
     p_lsm_ses->lab_drv_buf_size = pcm_frames_to_bytes(p_lsm_ses->pcm,
-                                                      p_lsm_ses->common.config.period_size);
-    p_lsm_ses->lab_drv_buf = (unsigned char *)calloc(1, p_lsm_ses->lab_drv_buf_size);
+        p_lsm_ses->common.config.period_size);
+    p_lsm_ses->lab_drv_buf = (unsigned char *)calloc(1,
+        p_lsm_ses->lab_drv_buf_size);
     if (!p_lsm_ses->lab_drv_buf) {
         ALOGE("%s: ERROR. Can not allocate lab buffer size %d", __func__,
             p_lsm_ses->lab_drv_buf_size);
@@ -1866,13 +1874,13 @@ static int allocate_lab_buffers_ape(st_hw_session_lsm_t* p_lsm_ses)
         __func__, p_lsm_ses->lab_drv_buf_size);
 
     rt_bytes_one_sec = (p_lsm_ses->common.config.rate *
-                        p_lsm_ses->common.config.channels *
-                        (pcm_format_to_bits(p_lsm_ses->common.config.format) >> 3));
+        p_lsm_ses->common.config.channels *
+        (pcm_format_to_bits(p_lsm_ses->common.config.format) >> 3));
 
-    if ((p_lsm_ses->common.client_req_hist_buf +
-         p_lsm_ses->common.client_req_preroll) > v_info->kw_duration) {
-        circ_buff_sz = ((p_lsm_ses->common.client_req_hist_buf +
-            p_lsm_ses->common.client_req_preroll +
+    if ((p_lsm_ses->common.sthw_cfg.client_req_hist_buf +
+         p_lsm_ses->common.sthw_cfg.client_req_preroll) > v_info->kw_duration) {
+        circ_buff_sz = ((p_lsm_ses->common.sthw_cfg.client_req_hist_buf +
+            p_lsm_ses->common.sthw_cfg.client_req_preroll +
             v_info->client_capture_read_delay) * rt_bytes_one_sec) / 1000;
     } else {
         circ_buff_sz = ((v_info->kw_duration +
@@ -1918,12 +1926,10 @@ static int sound_trigger_set_device
     profile_type = get_profile_type(p_ses);
     if (enable) {
         status = platform_stdev_check_and_set_codec_backend_cfg(
-                                                 p_ses->stdev->platform,
-                                                 v_info,
-                                                 &backend_cfg_change,
-                                                 p_ses->stdev->lpi_enable,
-                                                 p_ses->stdev->vad_enable,
-                                                 p_ses->client_req_preroll);
+            p_ses->stdev->platform, v_info, &backend_cfg_change,
+            p_ses->stdev->lpi_enable, p_ses->stdev->vad_enable,
+            p_ses->sthw_cfg.client_req_preroll);
+
         if (status) {
             ALOGE("%s: ERROR. codec backend config update failed, status=%d",
                 __func__, status);
@@ -2032,15 +2038,11 @@ static int sound_trigger_set_device
 }
 
 static int ape_reg_sm(st_hw_session_t *p_ses, void *sm_data,
-    sound_trigger_sound_model_type_t sm_type)
+    unsigned int sm_size, sound_trigger_sound_model_type_t sm_type __unused)
 {
     int status = 0, param_count = 0, stage_idx = 0;
     st_hw_session_lsm_t *p_lsm_ses = (st_hw_session_lsm_t*)p_ses;
     struct st_vendor_info *v_info = p_ses->vendor_uuid_info;
-    struct sound_trigger_phrase_sound_model *phrase_sm =
-       (struct sound_trigger_phrase_sound_model*)sm_data;
-    struct sound_trigger_sound_model *common_sm=
-       (struct sound_trigger_sound_model*)sm_data;
     struct snd_lsm_session_data ses_data;
     struct snd_lsm_module_params lsm_params;
     lsm_param_info_t param_info[LSM_MAX_STAGES_PER_SESSION];
@@ -2051,7 +2053,7 @@ static int ape_reg_sm(st_hw_session_t *p_ses, void *sm_data,
     struct st_module_param_info *mparams = NULL;
     audio_devices_t capture_device = 0;
 
-    ALOGD("%s:[%d] Enter vinfo %p", __func__, p_ses->sm_handle, v_info);
+    ALOGD("%s:[%d] Enter", __func__, p_ses->sm_handle);
 
     p_lsm_ses->pcm_id = platform_ape_get_pcm_device_id(p_ses->stdev->platform,
         &p_ses->use_case_idx);
@@ -2172,16 +2174,9 @@ static int ape_reg_sm(st_hw_session_t *p_ses, void *sm_data,
     stage_idx = LSM_STAGE_INDEX_FIRST;
     lsm_params.params = (unsigned char*)&param_info[0];
     mparams = p_lsm_ses->lsm_usecase->params;
+    param_info[param_count].param_data = sm_data;
+    param_info[param_count].param_size = sm_size;
 
-    if (sm_type == SOUND_MODEL_TYPE_KEYPHRASE) {
-        param_info[param_count].param_size = phrase_sm->common.data_size;
-        param_info[param_count].param_data =
-            (unsigned char*)phrase_sm + phrase_sm->common.data_offset;
-    } else {
-        param_info[param_count].param_size = common_sm->data_size;
-        param_info[param_count].param_data =
-            (unsigned char*)common_sm + common_sm->data_offset;
-    }
     lsm_fill_param_info(LSM_REG_SND_MODEL, &param_info[param_count++],
                         &mparams[LOAD_SOUND_MODEL], stage_idx);
 
@@ -2258,7 +2253,7 @@ sm_error:
     return status;
 }
 
-static int ape_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
+static int ape_dereg_sm(st_hw_session_t *p_ses)
 {
     int status = 0, buf_en = 0;
     struct snd_lsm_module_params lsm_params;
@@ -2270,18 +2265,6 @@ static int ape_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
     int stage_idx, param_count;
 
     ALOGD("%s:[%d] Enter", __func__, p_lsm_ses->common.sm_handle);
-
-    if (p_ses->conf_levels_info) {
-        free(p_ses->conf_levels_info);
-        p_ses->conf_levels_info = NULL;
-    }
-
-    if (p_ses->conf_levels) {
-        free(p_ses->conf_levels);
-        p_ses->conf_levels = NULL;
-    }
-
-    p_ses->rc_config = NULL;
 
     if (!p_lsm_ses->pcm) {
         ALOGV("%s: pcm NULL", __func__);
@@ -2303,7 +2286,7 @@ static int ape_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
     mparams = p_lsm_ses->lsm_usecase->params;
 
     /* reset last stage only if lab capture was set */
-    if ((stage_idx == p_lsm_ses->num_stages - 1) && capture_requested &&
+    if ((stage_idx == p_lsm_ses->num_stages - 1) && p_ses->lab_enabled &&
         (p_lsm_ses->lsm_usecase->param_tag_tracker & PARAM_LAB_CONTROL_BIT)) {
         param_info[param_count].param_size = sizeof(buf_en);
         param_info[param_count].param_data = (unsigned char *)&buf_en;
@@ -2316,7 +2299,7 @@ static int ape_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
         ss_cfg = node_to_item(node, st_lsm_ss_config_t, list_node);
         mparams = ss_cfg->params->params;
         /* reset last stage only if lab capture was set */
-        if ((stage_idx == p_lsm_ses->num_stages) && (!capture_requested))
+        if ((stage_idx == p_lsm_ses->num_stages) && (!p_ses->lab_enabled))
             break;
 
             param_info[param_count].param_size = sizeof(buf_en);
@@ -2335,7 +2318,7 @@ static int ape_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
                     __func__, status);
     }
 
-    if (capture_requested) {
+    if (p_ses->lab_enabled) {
         /*
          * Check and reset lab if ses was non-multi-stage,
          * and lab control param bit was not set.
@@ -2395,8 +2378,9 @@ static int ape_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
     return status;
 }
 
-static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mode,
-    bool capture_requested, struct sound_trigger_recognition_config *rc_config,
+static int ape_reg_sm_params(st_hw_session_t* p_ses,
+    unsigned int recognition_mode, bool capture_requested,
+    struct sound_trigger_recognition_config *rc_config __unused,
     sound_trigger_sound_model_type_t sm_type __unused, void *sm_data __unused)
 {
     int status = 0, buf_en = 1, retry_num = 0, offset = 0;
@@ -2460,8 +2444,8 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
     if (status)
         goto error_exit;
 
-    if ((rc_config->data_size > CUSTOM_CONFIG_OPAQUE_DATA_SIZE) &&
-        p_ses->vendor_uuid_info->is_qcva_uuid && !capture_requested)
+    if ((p_ses->sthw_cfg.custom_data_size > CUSTOM_CONFIG_OPAQUE_DATA_SIZE) &&
+        v_info->is_qcva_uuid && !capture_requested)
         disable_custom_config = true;
 
     ATRACE_BEGIN("sthal:lsm: pcm_start");
@@ -2490,6 +2474,8 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
         ALOGE("%s: Unknown recognition mode %d", __func__, recognition_mode);
         goto error_exit_1;
     }
+    ALOGV("%s: st recogntion_mode %d, dsp det_mode %d", __func__,
+          recognition_mode, det_mode.mode);
 
     stage_idx = LSM_STAGE_INDEX_FIRST;
     param_count = 0;
@@ -2498,18 +2484,18 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
     mparams = p_lsm_ses->lsm_usecase->params;
 
     /*
-     * If smlib is not present, pass only the opaque data as custom params and
+     * For other than QTI VA, pass only the opaque data as custom params and
      * ignore sending all other params
      */
-    if (v_info->smlib_handle) {
+    if (v_info->is_qcva_uuid || v_info->is_qcmd_uuid) {
         det_mode.detect_failure = p_ses->stdev->detect_failure;
         ALOGV("%s: dm %d df %d lab %d", __func__,
                det_mode.mode, det_mode.detect_failure, capture_requested);
         if (param_tag_tracker & PARAM_CONFIDENCE_LEVELS_BIT) {
             /* fill confidence level params */
             cfl_params = &param_info[param_count++];
-            cfl_params->param_size = p_ses->num_conf_levels;
-            cfl_params->param_data = p_ses->conf_levels;
+            cfl_params->param_size = p_ses->sthw_cfg.num_conf_levels;
+            cfl_params->param_data = p_ses->sthw_cfg.conf_levels;
             lsm_fill_param_info(LSM_MIN_CONFIDENCE_LEVELS, cfl_params,
                                 &mparams[CONFIDENCE_LEVELS], stage_idx);
             {
@@ -2541,7 +2527,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
      * Custom config is mandatory for adsp multi-stage session,
      * Default config would be sent if not explicitly set from client applicaiton.
      */
-    if ((rc_config->data_size && !disable_custom_config) ||
+    if ((p_ses->sthw_cfg.custom_data_size && !disable_custom_config) ||
         !list_empty(&p_ses->lsm_ss_cfg_list)) {
         /* fill opaque data as custom params */
         cus_params = &param_info[param_count++];
@@ -2600,29 +2586,34 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
             }
 
             /* copy opaque data from recognition config to payload */
-            if (((rc_config->data_size == 0) ||
-                 (rc_config->data_size > CUSTOM_CONFIG_OPAQUE_DATA_SIZE)) &&
-                p_ses->vendor_uuid_info->is_qcva_uuid) {
-                st_hw_ses_get_hist_buff_payload(p_ses, (uint8_t *)custom_payload + offset,
-                                                custom_payload_size - offset);
+            if (v_info->is_qcva_uuid &&
+                ((p_ses->sthw_cfg.custom_data_size == 0) ||
+                 (p_ses->sthw_cfg.custom_data_size >
+                  CUSTOM_CONFIG_OPAQUE_DATA_SIZE))) {
+                st_hw_ses_get_hist_buff_payload(p_ses,
+                    (uint8_t *)custom_payload + offset,
+                    custom_payload_size - offset);
             } else {
                 /* copy opaque data from recognition config to payload */
                 memcpy((char *)custom_payload + offset,
-                    (char *)rc_config + rc_config->data_offset, rc_config->data_size);
+                    p_ses->sthw_cfg.custom_data,
+                    p_ses->sthw_cfg.custom_data_size);
             }
         } else {
             /*
              * Send opaque data as it is,
-             * Using legacy custom param where app needs to form appropriate payload.
+             * Using legacy custom param where app needs to form appropriate
+             * payload.
              */
-            custom_payload_size = rc_config->data_size;
-            custom_payload = (unsigned char *)calloc(1, custom_payload_size);
+            custom_payload_size = p_ses->sthw_cfg.custom_data_size;
+            custom_payload = calloc(1, custom_payload_size);
             if (!custom_payload) {
-                ALOGE("%s: ERROR. Cannot allocate memory for custom_payload", __func__);
+                ALOGE("%s: ERROR. Cannot allocate memory for custom_payload",
+                      __func__);
                 goto error_exit_1;
             }
-            memcpy(custom_payload, (char *)rc_config + rc_config->data_offset,
-                rc_config->data_size);
+            memcpy(custom_payload, p_ses->sthw_cfg.custom_data,
+                p_ses->sthw_cfg.custom_data_size);
         }
         cus_params->param_size = custom_payload_size;
         cus_params->param_data = (unsigned char *)custom_payload;
@@ -2844,7 +2835,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
                 goto error_exit_1;
         }
     }
-
+    p_ses->lab_enabled = capture_requested;
     return status;
 
 error_exit_1:
@@ -2971,12 +2962,11 @@ static int ape_stop_buffering(st_hw_session_t* p_ses)
     return status;
 }
 
-static int cpe_reg_sm(st_hw_session_t *p_ses, void* sm_data,
-    sound_trigger_sound_model_type_t sm_type)
+static int cpe_reg_sm(st_hw_session_t *p_ses,
+    void* sm_data, unsigned int sm_size,
+    sound_trigger_sound_model_type_t sm_type __unused)
 {
     int status = 0, fd;
-    struct sound_trigger_phrase_sound_model *phrase_sm = sm_data;
-    struct sound_trigger_sound_model *common_sm= sm_data;
     struct snd_lsm_module_params lsm_params;
     struct lsm_params_info param_info;
     struct st_vendor_info *v_info = p_ses->vendor_uuid_info;
@@ -3080,16 +3070,8 @@ static int cpe_reg_sm(st_hw_session_t *p_ses, void* sm_data,
     param_info.param_type = LSM_REG_SND_MODEL;
     param_info.module_id = mparams[LOAD_SOUND_MODEL].module_id;
     param_info.param_id = mparams[LOAD_SOUND_MODEL].param_id;
-
-    if (sm_type == SOUND_MODEL_TYPE_KEYPHRASE) {
-        param_info.param_size = phrase_sm->common.data_size;
-        param_info.param_data =
-            (unsigned char*)phrase_sm + phrase_sm->common.data_offset;
-    } else {
-        param_info.param_size = common_sm->data_size;
-        param_info.param_data =
-            (unsigned char*)common_sm + common_sm->data_offset;
-    }
+    param_info.param_data = sm_data;
+    param_info.param_size = sm_size;
 
     lsm_params.num_params = 1;
     lsm_params.params = (unsigned char*)&param_info;
@@ -3131,7 +3113,7 @@ sm_error:
     return status;
 }
 
-static int cpe_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
+static int cpe_dereg_sm(st_hw_session_t *p_ses)
 {
     int status = 0, buf_en;
     struct snd_lsm_module_params lsm_params;
@@ -3140,18 +3122,6 @@ static int cpe_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
     struct st_module_param_info *mparams = p_lsm_ses->lsm_usecase->params;
 
     ALOGD("%s:[%d] Enter", __func__, p_lsm_ses->common.sm_handle);
-
-    if (p_ses->conf_levels_info) {
-        free(p_ses->conf_levels_info);
-        p_ses->conf_levels_info = NULL;
-    }
-
-    if (p_ses->conf_levels) {
-        free(p_ses->conf_levels);
-        p_ses->conf_levels = NULL;
-    }
-
-    p_ses->rc_config = NULL;
 
     if (!p_lsm_ses->pcm) {
         ALOGV("%s: pcm NULL", __func__);
@@ -3164,7 +3134,7 @@ static int cpe_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
     /* note see note in ape_dereg_sm */
     pthread_join(p_lsm_ses->callback_thread, (void **) NULL);
 
-    if (capture_requested) {
+    if (p_ses->lab_enabled) {
         buf_en = 0;
         ATRACE_BEGIN("sthal:lsm: pcm_ioctl sndrv_lsm_lab_control");
         status = pcm_ioctl(p_lsm_ses->pcm, SNDRV_LSM_LAB_CONTROL, &buf_en);
@@ -3209,8 +3179,9 @@ static int cpe_dereg_sm(st_hw_session_t *p_ses, bool capture_requested)
     return status;
 }
 
-static int cpe_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mode,
-    bool capture_requested, struct sound_trigger_recognition_config *rc_config,
+static int cpe_reg_sm_params(st_hw_session_t* p_ses,
+    unsigned int recognition_mode, bool capture_requested,
+    struct sound_trigger_recognition_config *rc_config __unused,
     sound_trigger_sound_model_type_t sm_type, void *sm_data __unused)
 {
     int status = 0, idx = 0;
@@ -3248,8 +3219,8 @@ static int cpe_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
         return status;
     }
 
-    if ((rc_config->data_size > CUSTOM_CONFIG_OPAQUE_DATA_SIZE) &&
-        p_ses->vendor_uuid_info->is_qcva_uuid && !capture_requested)
+    if (!capture_requested && v_info->is_qcva_uuid &&
+        (p_ses->sthw_cfg.custom_data_size > CUSTOM_CONFIG_OPAQUE_DATA_SIZE))
         disable_custom_config = true;
 
     ATRACE_BEGIN("sthal:lsm: pcm_start");
@@ -3287,24 +3258,24 @@ static int cpe_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
     param_tag_tracker = p_lsm_ses->lsm_usecase->param_tag_tracker;
 
     /*
-     * If this is generic sound model or smlib is not present, pass only the
+     * If this is generic sound model or other than QTI VA, pass only the
      * opaque data as custom params and ignore sending all other params.
      */
-    if (v_info->smlib_handle &&
+    if ((v_info->is_qcva_uuid || v_info->is_qcmd_uuid) &&
         (sm_type == SOUND_MODEL_TYPE_KEYPHRASE)) {
         det_mode.detect_failure = p_ses->stdev->detect_failure;
         ALOGV("%s: dm %d df %d lab %d", __func__,
                det_mode.mode, det_mode.detect_failure, capture_requested);
 
         if ((param_tag_tracker & PARAM_CONFIDENCE_LEVELS_BIT) &&
-             p_ses->conf_levels) {
+             p_ses->sthw_cfg.conf_levels) {
             /* fill confidence level params if present */
             cfl_params = &param_info[idx++];
             cfl_params->param_type = LSM_MIN_CONFIDENCE_LEVELS;
             cfl_params->module_id = mparams[CONFIDENCE_LEVELS].module_id;
             cfl_params->param_id = mparams[CONFIDENCE_LEVELS].param_id;
-            cfl_params->param_size = p_ses->num_conf_levels;
-            cfl_params->param_data = p_ses->conf_levels;
+            cfl_params->param_size = p_ses->sthw_cfg.num_conf_levels;
+            cfl_params->param_data = p_ses->sthw_cfg.conf_levels;
             lsm_params.num_params++;
             {
                 unsigned int i;
@@ -3327,7 +3298,7 @@ static int cpe_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
         }
     }
 
-    if (rc_config->data_size && !disable_custom_config) {
+    if (p_ses->sthw_cfg.custom_data_size && !disable_custom_config) {
         /* fill opaque data as custom params */
         cus_params = &param_info[idx++];
         if (param_tag_tracker & PARAM_CUSTOM_CONFIG_BIT) {
@@ -3348,29 +3319,31 @@ static int cpe_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
             memcpy(custom_payload, &custom_conf_params, sizeof(struct lsm_param_payload));
             offset += sizeof(struct lsm_param_payload);
             /* copy opaque data from recognition config to payload */
-            if (((rc_config->data_size == 0) ||
-               (rc_config->data_size > CUSTOM_CONFIG_OPAQUE_DATA_SIZE)) &&
-               p_ses->vendor_uuid_info->is_qcva_uuid) {
-               st_hw_ses_get_hist_buff_payload(p_ses, (uint8_t *)custom_payload + offset,
-                                               custom_payload_size - offset);
+            if (v_info->is_qcva_uuid &&
+                ((p_ses->sthw_cfg.custom_data_size == 0) ||
+                 (p_ses->sthw_cfg.custom_data_size >
+                  CUSTOM_CONFIG_OPAQUE_DATA_SIZE))) {
+               st_hw_ses_get_hist_buff_payload(p_ses,
+                   (uint8_t *)custom_payload + offset,
+                   custom_payload_size - offset);
             } else {
               /* copy opaque data from recognition config to payload */
               memcpy((char *)custom_payload + offset,
-                   (char *)rc_config + rc_config->data_offset, rc_config->data_size);
+                    p_ses->sthw_cfg.custom_data, p_ses->sthw_cfg.custom_data_size);
             }
         } else {
-             /*
+            /*
              * Send opaque data as it is,
              * Using legacy custom param where app needs to form appropriate payload.
              */
-             custom_payload_size = rc_config->data_size;
-             custom_payload = (unsigned char *)calloc(1, custom_payload_size);
-             if (!custom_payload) {
-                 ALOGE("%s: ERROR. Cannot allocate memory for custom_payload", __func__);
-                 goto error_exit;
-             }
-             memcpy(custom_payload, (char *)rc_config + rc_config->data_offset,
-             rc_config->data_size);
+            custom_payload_size = p_ses->sthw_cfg.custom_data_size;
+            custom_payload = calloc(1, custom_payload_size);
+            if (!custom_payload) {
+                ALOGE("%s: ERROR. Cannot allocate memory for custom_payload", __func__);
+                goto error_exit;
+            }
+            memcpy(custom_payload, p_ses->sthw_cfg.custom_data,
+                p_ses->sthw_cfg.custom_data_size);
         }
         cus_params->param_type = LSM_CUSTOM_PARAMS;
         cus_params->param_size = custom_payload_size;
@@ -3406,7 +3379,7 @@ static int cpe_reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mo
         if (status)
             goto err_exit_1;
     }
-
+    p_ses->lab_enabled = capture_requested;
     ALOGD("%s:[%d] Exit, status=%d", __func__, p_lsm_ses->common.sm_handle, status);
     return 0;
 error_exit:
@@ -3489,7 +3462,7 @@ static int cpe_stop(st_hw_session_t* p_ses)
     return status;
 }
 
-static int cpe_stop_buffering(st_hw_session_t* p_ses, bool capture_requested)
+static int cpe_stop_buffering(st_hw_session_t* p_ses)
 {
     int status = 0;
     st_hw_session_lsm_t *p_lsm_ses =
@@ -3516,7 +3489,7 @@ static int cpe_stop_buffering(st_hw_session_t* p_ses, bool capture_requested)
             ALOGE("%s: ERROR. SNDRV_PCM_IOCTL_RESET failed status %d",
                __func__, status);
     }
-    if (capture_requested) {
+    if (p_ses->lab_enabled) {
         pthread_mutex_lock(&p_lsm_ses->lock);
         pthread_cond_broadcast(&p_lsm_ses->cond);
         pthread_mutex_unlock(&p_lsm_ses->lock);
@@ -3527,9 +3500,9 @@ static int cpe_stop_buffering(st_hw_session_t* p_ses, bool capture_requested)
 }
 
 static int route_reg_sm_ape(st_hw_session_t *p_ses,void *sm_data,
-        sound_trigger_sound_model_type_t sm_type)
+    unsigned int sm_size, sound_trigger_sound_model_type_t sm_type)
 {
-    return ape_reg_sm(p_ses, sm_data, sm_type);
+    return ape_reg_sm(p_ses, sm_data, sm_size, sm_type);
 }
 
 static int route_reg_sm_params_ape(st_hw_session_t* p_ses,
@@ -3546,12 +3519,11 @@ static int route_dereg_sm_params_ape(st_hw_session_t* p_ses)
     return ape_dereg_sm_params(p_ses);
 }
 
-static int route_dereg_sm_ape(st_hw_session_t* p_ses,
-    bool capture_requested)
+static int route_dereg_sm_ape(st_hw_session_t* p_ses)
 {
     int status = 0;
 
-    status = ape_dereg_sm(p_ses, capture_requested);
+    status = ape_dereg_sm(p_ses);
 
     return status;
 }
@@ -3564,7 +3536,6 @@ static int route_start_ape(st_hw_session_t* p_ses)
 
 static int route_restart_ape(st_hw_session_t* p_ses,
                              unsigned int recognition_mode __unused,
-                             bool capture_requested __unused,
                              struct sound_trigger_recognition_config *rc_config __unused,
                              sound_trigger_sound_model_type_t sm_type __unused,
                              void *sm_data __unused)
@@ -3582,7 +3553,7 @@ static int route_stop_ape(st_hw_session_t* p_ses)
     return ape_stop(p_ses);
 }
 
-static int route_stop_buffering_ape(st_hw_session_t* p_ses, bool capture_requested __unused)
+static int route_stop_buffering_ape(st_hw_session_t* p_ses)
 {
     int status = 0;
     st_hw_session_lsm_t *p_lsm_ses = (st_hw_session_lsm_t *)p_ses;
@@ -3630,6 +3601,11 @@ static int route_stop_buffering_ape(st_hw_session_t* p_ses, bool capture_request
             break;
         }
     }
+    if (p_lsm_ses->lab_on_detection) {
+        ape_stop_buffering(&p_lsm_ses->common);
+        p_lsm_ses->lab_on_detection = false;
+    }
+
     pthread_mutex_unlock(&p_lsm_ses->lock);
 
     return status;
@@ -3675,9 +3651,9 @@ int route_send_custom_chmix_coeff_ape(st_hw_session_t *p_ses, char *str)
 }
 
 static int route_reg_sm_cpe(st_hw_session_t *p_ses, void* sm_data,
-    sound_trigger_sound_model_type_t sm_type)
+    unsigned int sm_size, sound_trigger_sound_model_type_t sm_type)
 {
-    return cpe_reg_sm(p_ses, sm_data, sm_type);
+    return cpe_reg_sm(p_ses, sm_data, sm_size, sm_type);
 }
 
 static int route_reg_sm_params_cpe(st_hw_session_t* p_ses,
@@ -3694,9 +3670,9 @@ static int route_dereg_sm_params_cpe(st_hw_session_t* p_ses)
     return cpe_dereg_sm_params(p_ses);
 }
 
-static int route_dereg_sm_cpe(st_hw_session_t* p_ses, bool capture_requested)
+static int route_dereg_sm_cpe(st_hw_session_t* p_ses)
 {
-    return cpe_dereg_sm(p_ses, capture_requested);
+    return cpe_dereg_sm(p_ses);
 }
 
 static int route_start_cpe(st_hw_session_t* p_ses)
@@ -3705,7 +3681,7 @@ static int route_start_cpe(st_hw_session_t* p_ses)
 }
 
 static int route_restart(st_hw_session_t* p_ses __unused, unsigned int recognition_mode __unused,
-   bool capture_requested __unused, struct sound_trigger_recognition_config *rc_config __unused,
+   struct sound_trigger_recognition_config *rc_config __unused,
    sound_trigger_sound_model_type_t sm_type __unused, void *sm_data __unused)
 {
     /*
@@ -3720,8 +3696,7 @@ static int route_stop_cpe(st_hw_session_t* p_ses)
     return cpe_stop(p_ses);
 }
 
-static int route_stop_buffering_cpe(st_hw_session_t* p_ses,
-    bool capture_requested)
+static int route_stop_buffering_cpe(st_hw_session_t* p_ses)
 {
     int status = 0;
     st_arm_second_stage_t *st_sec_stage;
@@ -3742,7 +3717,7 @@ static int route_stop_buffering_cpe(st_hw_session_t* p_ses,
     }
 
     check_and_exit_lab(p_ses);
-    status = cpe_stop_buffering(p_ses, capture_requested);
+    status = cpe_stop_buffering(p_ses);
 
     CLEAR_STATE(p_ses->state, SES_BUFFERING);
     return status;
@@ -4147,7 +4122,6 @@ int st_hw_sess_lsm_init(st_hw_session_t *const p_ses,
     p_ses->sm_handle = sm_handle;
     p_ses->stdev = stdev;
     p_ses->is_generic_event = false;
-    p_ses->client_req_det_mode = ST_HW_SESS_DET_UNKNOWN_MODE;
 
     p_lsm_ses->exit_lab_processing = false;
     p_lsm_ses->lab_processing_active = false;

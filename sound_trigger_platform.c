@@ -90,8 +90,8 @@ typedef unsigned char __u8;
 
 #define ST_PARAM_KEY_FIRMWARE_IMAGE "firmware_image"
 #define ST_PARAM_KEY_SM_VENDOR_UUID "vendor_uuid"
+#define ST_PARAM_KEY_MERGE_FIRST_STAGE_SOUNDMODELS "merge_first_stage_sound_models"
 #define ST_PARAM_KEY_APP_TYPE "app_type"
-#define ST_PARAM_KEY_LIBRARY "library"
 #define ST_PARAM_KEY_MAX_CPE_PHRASES "max_cpe_phrases"
 #define ST_PARAM_KEY_MAX_APE_USERS "max_ape_users"
 #define ST_PARAM_KEY_MAX_APE_PHRASES "max_ape_phrases"
@@ -411,45 +411,62 @@ struct platform_data {
     struct listnode acdb_meta_key_list;
 };
 
-static int load_smlib(struct st_vendor_info *sm_info, const char *name)
+static int load_soundmodel_lib(sound_trigger_device_t *stdev)
 {
     int status = 0;
 
-    sm_info->smlib_handle = dlopen(name, RTLD_NOW);
-    if (!sm_info->smlib_handle) {
+    stdev->smlib_handle = dlopen(LIB_SVA_SOUNDMODEL, RTLD_NOW);
+    if (!stdev->smlib_handle) {
         ALOGE("%s: ERROR. %s", __func__, dlerror());
         return -ENODEV;
     }
 
-    DLSYM(sm_info->smlib_handle, sm_info->generate_st_phrase_recognition_event,
-          generate_sound_trigger_phrase_recognition_event, status);
+    DLSYM(stdev->smlib_handle, stdev->smlib_getSoundModelHeader,
+          getSoundModelHeader, status);
     if (status)
         goto cleanup;
-    DLSYM(sm_info->smlib_handle, sm_info->generate_st_phrase_recognition_event_v2,
-          generate_sound_trigger_phrase_recognition_event_v2, status);
+
+    DLSYM(stdev->smlib_handle, stdev->smlib_releaseSoundModelHeader,
+          releaseSoundModelHeader, status);
     if (status)
         goto cleanup;
-    DLSYM(sm_info->smlib_handle,
-          sm_info->generate_st_recognition_config_payload,
-          generate_sound_trigger_recognition_config_payload, status);
+
+    DLSYM(stdev->smlib_handle, stdev->smlib_getKeywordPhrases,
+          getKeywordPhrases, status);
     if (status)
         goto cleanup;
-    DLSYM(sm_info->smlib_handle,
-          sm_info->generate_st_recognition_config_payload_v2,
-          generate_sound_trigger_recognition_config_payload_v2, status);
+
+    DLSYM(stdev->smlib_handle, stdev->smlib_getUserNames,
+          getUserNames, status);
     if (status)
         goto cleanup;
-    DLSYM(sm_info->smlib_handle,
-          sm_info->generate_st_phrase_recognition_event_v3,
-          generate_sound_trigger_phrase_recognition_event_v3, status);
-    /* Ignore error for this symbol */
+
+    DLSYM(stdev->smlib_handle, stdev->smlib_getMergedModelSize,
+          getMergedModelSize, status);
+    if (status)
+        goto cleanup;
+
+    DLSYM(stdev->smlib_handle, stdev->smlib_mergeModels,
+          mergeModels, status);
+    if (status)
+        goto cleanup;
+
+    DLSYM(stdev->smlib_handle, stdev->smlib_getSizeAfterDeleting,
+          getSizeAfterDeleting, status);
+    if (status)
+        goto cleanup;
+
+    DLSYM(stdev->smlib_handle, stdev->smlib_deleteFromModel,
+          deleteFromModel, status);
+    if (status)
+        goto cleanup;
 
     return 0;
 
 cleanup:
-    if (sm_info->smlib_handle) {
-        dlclose(sm_info->smlib_handle);
-        sm_info->smlib_handle = NULL;
+    if (stdev->smlib_handle) {
+        dlclose(stdev->smlib_handle);
+        stdev->smlib_handle = NULL;
     }
     return status;
 }
@@ -2326,16 +2343,6 @@ static int platform_stdev_set_sm_config_params
         sm_info->app_type = strtoul(str_value, NULL, 16);
     }
 
-    err = str_parms_get_str(parms, ST_PARAM_KEY_LIBRARY,
-                            str_value, sizeof(str_value));
-    if (err >= 0) {
-        str_parms_del(parms, ST_PARAM_KEY_LIBRARY);
-        /* if soundmodel library for ISV vendor uuid is mentioned, use it. If not
-           ignore and continue sending the opaque data from HAL to DSP */
-        if (strcmp(str_value, "none"))
-            load_smlib(sm_info, str_value);
-    }
-
     err = str_parms_get_int(parms, ST_PARAM_KEY_MAX_CPE_PHRASES, &value);
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_MAX_CPE_PHRASES);
@@ -2510,6 +2517,14 @@ static int platform_stdev_set_sm_config_params
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_DAM_TOKEN_ID);
         sm_info->lab_dam_cfg_payload.token_id = value;
+    }
+
+    err = str_parms_get_str(parms, ST_PARAM_KEY_MERGE_FIRST_STAGE_SOUNDMODELS,
+                            str_value, sizeof(str_value));
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_MERGE_FIRST_STAGE_SOUNDMODELS);
+        sm_info->merge_fs_soundmodels =
+            !strncasecmp(str_value, "true", 4) ? true : false;
     }
 
     sm_info->avail_transit_ape_phrases = sm_info->avail_ape_phrases;
@@ -3612,9 +3627,18 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
         v_info = node_to_item(v_node, struct st_vendor_info, list_node);
         if (!memcmp(&v_info->uuid, &qcva_uuid, sizeof(sound_trigger_uuid_t))) {
             v_info->is_qcva_uuid = true;
+            if (!stdev->smlib_handle && v_info->merge_fs_soundmodels) {
+                ret = load_soundmodel_lib(stdev);
+                if (ret) {
+                    v_info->merge_fs_soundmodels = false;
+                    ret = 0;
+                }
+            }
         } else if (!memcmp(&v_info->uuid, &qcmd_uuid, sizeof(sound_trigger_uuid_t))) {
             v_info->is_qcmd_uuid = true;
+            v_info->merge_fs_soundmodels = false;
         }  else {
+            v_info->merge_fs_soundmodels = false;
             ALOGV("%s: ISV uuid present", __func__);
         }
         if (!stdev->adpcm_dec_lib_handle &&
@@ -3684,8 +3708,6 @@ cleanup:
     }
     list_for_each_safe(v_node, temp_node, &stdev->vendor_uuid_list) {
         v_info = node_to_item(v_node, struct st_vendor_info, list_node);
-        if (v_info->smlib_handle)
-            dlclose(v_info->smlib_handle);
         list_remove(v_node);
         free(v_info);
     }
@@ -3741,8 +3763,6 @@ void platform_stdev_deinit(void *platform)
                 free(lsm_info);
             }
 
-            if (v_info->smlib_handle)
-                dlclose(v_info->smlib_handle);
             list_remove(v_node);
             free(v_info);
         }

@@ -33,7 +33,7 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#define LOG_TAG "sound_trigger_hw"
+#define LOG_TAG "sound_trigger_hw:ss"
 #define ATRACE_TAG (ATRACE_TAG_HAL)
 /* #define LOG_NDEBUG 0 */
 #define LOG_NDDEBUG 0
@@ -227,7 +227,8 @@ exit:
             kw_start_ms, kw_end_ms);
     } else {
         ss_session->det_status = KEYWORD_DETECTION_REJECT;
-        ALOGD("%s: Detection reject", __func__);
+        ALOGD("%s: Detection reject, confidence level = %d", __func__,
+            ss_session->confidence_score);
     }
     /* Signal aggregator thread with detection result */
     pthread_cond_signal(&ss_session->st_ses->ss_detections_cond);
@@ -362,8 +363,8 @@ static int start_user_verification(st_arm_second_stage_t *st_sec_stage)
     capi_uv_ptr.actual_data_len = sizeof(voiceprint2_sva_uv_score_t);
     capi_uv_ptr.max_data_len = sizeof(voiceprint2_sva_uv_score_t);
 
-    ALOGV("%s: Issuing capi_set_param for param %d", __func__,
-        VOICEPRINT2_ID_SVA_UV_SCORE);
+    ALOGV("%s: Issuing capi_set_param for param %d, uv_conf_score %f", __func__,
+        VOICEPRINT2_ID_SVA_UV_SCORE, uv_cfg_ptr->sva_uv_confidence_score);
     rc = ss_session->capi_handle->vtbl_ptr->set_param(ss_session->capi_handle,
         VOICEPRINT2_ID_SVA_UV_SCORE, NULL, &capi_uv_ptr);
     if (CAPI_V2_EOK != rc) {
@@ -429,7 +430,8 @@ exit:
             ss_session->confidence_score);
     } else {
         ss_session->det_status = USER_VERIFICATION_REJECT;
-        ALOGD("%s: Detection reject", __func__);
+        ALOGD("%s: Detection reject, confidence level = %d", __func__,
+            ss_session->confidence_score);
     }
     /* Signal aggregator thread with detection result */
     pthread_cond_signal(&ss_session->st_ses->ss_detections_cond);
@@ -721,8 +723,10 @@ int st_second_stage_module_deinit(st_arm_second_stage_t *st_sec_stage)
 {
     if (st_sec_stage) {
         if (st_sec_stage->ss_session) {
-            dlclose(st_sec_stage->ss_session->capi_lib_handle);
-            st_sec_stage->ss_session->capi_lib_handle = NULL;
+            if (st_sec_stage->ss_session->capi_lib_handle) {
+                dlclose(st_sec_stage->ss_session->capi_lib_handle);
+                st_sec_stage->ss_session->capi_lib_handle = NULL;
+            }
             if (st_sec_stage->ss_session->capi_handle) {
                 st_sec_stage->ss_session->capi_handle->vtbl_ptr = NULL;
                 free(st_sec_stage->ss_session->capi_handle);
@@ -762,7 +766,7 @@ int st_second_stage_stop_session(st_arm_second_stage_t *st_sec_stage)
 
     if ((st_sec_stage->ss_info->sm_detection_type ==
          ST_SM_TYPE_USER_VERIFICATION) &&
-        !st_sec_stage->ss_session->st_ses->stdev->ssr_offline_received) {
+        !st_sec_stage->stdev->ssr_offline_received) {
         ALOGV("%s: Issuing capi_end", __func__);
         rc = st_sec_stage->ss_session->capi_handle->vtbl_ptr->end(
             st_sec_stage->ss_session->capi_handle);

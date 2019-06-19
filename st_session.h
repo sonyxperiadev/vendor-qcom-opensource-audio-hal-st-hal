@@ -41,14 +41,18 @@
 #include "sound_trigger_platform.h"
 #include "st_common_defs.h"
 
-#define MAX_STATE_NAME_LEN 50
-
 /* Below are the states that can be requested from the client */
 enum client_states_t {
     ST_STATE_IDLE,
     ST_STATE_LOADED,
     ST_STATE_ACTIVE
 };
+
+typedef enum {
+    ST_DET_LOW_POWER_MODE,
+    ST_DET_HIGH_PERF_MODE,
+    ST_DET_UNKNOWN_MODE = 0xFF,
+}  st_det_perf_mode_t;
 
 typedef enum st_session_event_id {
     ST_SES_EV_LOAD_SM,
@@ -76,12 +80,30 @@ struct st_session_ev;
 typedef struct st_session_ev st_session_ev_t;
 
 typedef struct st_session st_session_t;
-typedef int (*st_session_state_fn_t)(st_session_t*, st_session_ev_t *ev);
+typedef struct st_proxy_session st_proxy_session_t;
+typedef int (*st_proxy_session_state_fn_t)(st_proxy_session_t*,
+                                           st_session_ev_t *ev);
+
+struct sound_model_info {
+    unsigned char *sm_data;
+    unsigned int sm_size;
+    sound_trigger_sound_model_type_t sm_type;
+    unsigned int num_keyphrases;
+    unsigned int num_users;
+    char **keyphrases;
+    char **users;
+    char **cf_levels_kw_users;
+    unsigned char *cf_levels;
+    unsigned char *det_cf_levels;
+    unsigned int cf_levels_size;
+    bool sm_merged;
+};
 
 struct st_session {
     /* TODO: decouple device below from session */
     struct listnode list_node;
     struct listnode transit_list_node;
+    struct listnode hw_list_node;
 
     struct sound_trigger_device *stdev;
     struct st_vendor_info *vendor_uuid_info;
@@ -89,22 +111,48 @@ struct st_session {
     pthread_mutex_t lock;
     st_exec_mode_t exec_mode;
     st_exec_mode_t ssr_transit_exec_mode;
-    bool enable_trans;
-    struct sound_trigger_phrase_sound_model *sm_data;
+    struct sound_trigger_phrase_sound_model *phrase_sm;
     struct sound_trigger_recognition_config *rc_config;
-
     sound_trigger_sound_model_type_t sm_type;
-
     sound_model_handle_t sm_handle;
     recognition_callback_t callback;
     void *cookie;
     audio_io_handle_t capture_handle;
-
     bool capture_requested;
-    bool lab_enabled;
 
     unsigned int num_phrases;
     unsigned int num_users;
+    unsigned int recognition_mode;
+    enum client_states_t state;
+    bool paused;
+    bool pending_stop;
+    bool pending_load;
+    bool pending_set_device;
+    st_det_perf_mode_t client_req_det_mode;
+    unsigned int hist_buf_duration;
+    unsigned int preroll_duration;
+
+    struct listnode second_stage_list;
+    uint32_t conf_levels_intf_version;
+    void *st_conf_levels;
+
+    st_proxy_session_t *hw_proxy_ses;
+    struct sound_model_info sm_info;
+};
+
+struct st_proxy_session {
+    struct listnode clients_list; /* Attached client sessions */
+    struct sound_trigger_device *stdev;
+    struct st_vendor_info *vendor_uuid_info;
+
+    pthread_mutex_t lock;
+    st_exec_mode_t exec_mode;
+    bool enable_trans;
+
+    struct sound_trigger_recognition_config *rc_config;
+    sound_trigger_sound_model_type_t sm_type;
+    sound_model_handle_t sm_handle;
+    bool lab_enabled;
     unsigned int recognition_mode;
 
     st_hw_session_t *hw_ses_cpe; /* cpe hw session */
@@ -113,29 +161,31 @@ struct st_session {
     st_hw_session_t *hw_ses_current; /* current hw session, this is set every
         time there is an exec_mode change and points to one of the above
         hw sessions */
-    bool paused;
-    bool hw_session_started;
-    /* flag gets set if user restarts
-        session right after detection before we have a chance to stop the
-        session */
+    st_hw_session_t *hw_ses_prev; /* cached hw_ses_current,
+        used for WDSP<->ADSP transitions */
+    st_session_t *det_stc_ses; /* Current detected client */
 
-    st_session_state_fn_t current_state;
-    enum client_states_t client_req_state; /* holds the state that was requested by
-        user this is used for recovering from SSR */
+    /*
+     * flag gets set if user restarts
+     * session right after detection before we have a chance to stop the
+     * session
+     */
+    bool hw_session_started;
+
+    st_proxy_session_state_fn_t current_state;
     bool device_disabled;
-    bool pending_stop;
 
     pthread_t aggregator_thread;
     pthread_mutex_t ss_detections_lock;
     pthread_cond_t ss_detections_cond;
-    bool sent_detection_to_client;
+    bool aggregator_thread_created;
     bool exit_aggregator_loop;
-    struct listnode second_stage_list;
     bool enable_second_stage;
     st_session_ev_t *det_session_ev;
     int rc_config_update_counter;
     bool detection_requested;
-    uint32_t conf_levels_intf_version;
+
+    struct sound_model_info sm_info;
     FILE *lab_fp;
 };
 
@@ -169,7 +219,6 @@ int st_session_ssr_online(st_session_t *st_ses,
    enum ssr_event_status ssr_type);
 int st_session_pause(st_session_t *st_ses);
 int st_session_resume(st_session_t *st_ses);
-void st_session_query_state(st_session_t *st_ses, char *state_name, size_t len);
 int st_session_restart(st_session_t *st_ses);
 int st_session_send_custom_chmix_coeff(st_session_t *st_ses, char *str);
 int st_session_get_config(st_session_t *st_ses, struct pcm_config *config);
@@ -182,10 +231,13 @@ bool st_session_is_ssr_state(st_session_t *st_ses);
 int st_session_set_exec_mode(st_session_t *st_ses, st_exec_mode_t exec);
 int st_session_get_param_data(st_session_t *st_ses, const char *param,
     void *payload, size_t payload_size, size_t *param_data_size);
+int st_session_request_detection(st_session_t *st_ses);
+int st_session_update_recongition_config(st_session_t *st_ses);
+int st_session_get_preroll(st_session_t *st_ses);
+
 int process_detection_event_keyphrase_v2(
-    st_session_t *st_ses, int detect_status,
+    st_proxy_session_t *st_ses, int detect_status,
     void *payload, size_t payload_size,
     struct sound_trigger_phrase_recognition_event **event);
-int st_session_request_detection(st_session_t *st_ses);
 
 #endif /* ST_SESSION_H */
