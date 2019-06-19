@@ -4506,10 +4506,10 @@ bool platform_stdev_check_and_update_concurrency
         stdev->reset_backend = true;
 
     ALOGD("%s: dedicated path %d, reset backend %d, tx %d, rx %d,"
-          "concurrency session%s allowed",
-          __func__, stdev->dedicated_sva_path, stdev->reset_backend,
-          stdev->tx_concurrency_active, stdev->rx_concurrency_active,
-          concurrency_ses_allowed? "" : " not");
+          " concurrency session%s allowed",
+          __func__, platform_stdev_is_dedicated_sva_path(stdev->platform),
+          stdev->reset_backend, stdev->tx_concurrency_active,
+          stdev->rx_concurrency_active, concurrency_ses_allowed? "" : " not");
 
     return concurrency_ses_allowed;
 }
