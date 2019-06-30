@@ -99,12 +99,70 @@ struct use_case_info {
 typedef int (*g722_init_decoder_t)(void *decoder_inp);
 typedef int (*g722_dec_get_total_byte_size_t)(int *total_byte_size);
 typedef int (*g722_dec_process_t)(short *in_buf, short *out_buf,
-                                   int in_bytes, int *out_samples,
-                                   void *decoder_inp);
+                                  int in_bytes, int *out_samples,
+                                  void *decoder_inp);
 
 /* MULAW decoder APIs */
 typedef int (*mulaw_dec_process_t)(short *out_buf, char *in_buf,
                                    unsigned int in_bytes);
+
+/* Listen Sound Model Library APIs */
+#include "ListenSoundModelLib.h"
+
+typedef listen_status_enum (*smlib_getSoundModelHeader_t)
+(
+    listen_model_type         *pSoundModel,
+    listen_sound_model_header *pListenSoundModelHeader
+);
+
+typedef listen_status_enum (*smlib_releaseSoundModelHeader_t)
+(
+    listen_sound_model_header *pListenSoundModelHeader
+);
+
+typedef listen_status_enum (*smlib_getKeywordPhrases_t)
+(
+    listen_model_type *pSoundModel,
+    uint16_t          *numKeywords,
+    keywordId_t       *keywords
+);
+
+typedef listen_status_enum (*smlib_getUserNames_t)
+(
+    listen_model_type *pSoundModel,
+    uint16_t          *numUsers,
+    userId_t          *users
+);
+
+typedef listen_status_enum (*smlib_getMergedModelSize_t)
+(
+     uint16_t          numModels,
+     listen_model_type *pModels[],
+     uint32_t          *nOutputModelSize
+);
+
+typedef listen_status_enum (*smlib_mergeModels_t)
+(
+     uint16_t          numModels,
+     listen_model_type *pModels[],
+     listen_model_type *pMergedModel
+);
+
+typedef listen_status_enum (*getSizeAfterDeleting_t)
+(
+    listen_model_type *pInputModel,
+    keywordId_t       keywordId,
+    userId_t          userId,
+    uint32_t          *nOutputModelSize
+);
+
+typedef listen_status_enum (*deleteFromModel_t)
+(
+    listen_model_type *pInputModel,
+    keywordId_t       keywordId,
+    userId_t          userId,
+    listen_model_type *pResultModel
+);
 
 struct sound_trigger_device {
     struct sound_trigger_hw_device device;
@@ -154,6 +212,7 @@ struct sound_trigger_device {
     bool stop_transitions_thread_loop;
     transit_dir_t transit_dir;
     bool dedicated_sva_path;
+    bool dedicated_headset_path;
     bool disable_hwmad;
     st_platform_lpi_enable_t platform_lpi_enable;
 
@@ -175,14 +234,16 @@ struct sound_trigger_device {
     bool is_gcs;
 
     struct listnode vendor_uuid_list;
-    void *smlib_handle;
-    smlib_generate_sound_trigger_recognition_config_payload_t
-                                    generate_st_recognition_config_payload;
-    smlib_generate_sound_trigger_phrase_recognition_event_t
-                                    generate_st_phrase_recognition_event;
-    smlib_generate_sound_trigger_phrase_recognition_event_t
-                                    generate_st_phrase_recognition_event_v2;
 
+    void *smlib_handle;
+    smlib_getSoundModelHeader_t smlib_getSoundModelHeader;
+    smlib_releaseSoundModelHeader_t smlib_releaseSoundModelHeader;
+    smlib_getKeywordPhrases_t smlib_getKeywordPhrases;
+    smlib_getUserNames_t smlib_getUserNames;
+    smlib_getMergedModelSize_t smlib_getMergedModelSize;
+    smlib_mergeModels_t smlib_mergeModels;
+    getSizeAfterDeleting_t smlib_getSizeAfterDeleting;
+    deleteFromModel_t smlib_deleteFromModel;
 
     void *adpcm_dec_lib_handle;
     g722_init_decoder_t adpcm_dec_init;

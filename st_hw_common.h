@@ -61,12 +61,6 @@ int hw_session_notifier_cancel(sound_model_handle_t handle,
 /* 2nd stage detection */
 int st_hw_ses_get_hist_buff_payload(st_hw_session_t *p_ses,
     uint8_t *payload_buff, size_t buff_size);
-int generate_sound_trigger_recognition_config_payload(
-    const void *sm_levels_generic, unsigned char **out_payload,
-    unsigned int *out_payload_size, uint32_t version);
-int generate_sound_trigger_recognition_config_payload_v2(
-    const void *sm_levels_generic, unsigned char **out_payload,
-    unsigned int *out_payload_size, uint32_t version);
 
 static inline uint64_t get_current_time_ns()
 {

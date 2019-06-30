@@ -66,6 +66,8 @@ struct sound_trigger_device;
 #define LIB_ACDB_LOADER "libacdbloader.so"
 #define LIB_ADPCM_DECODER "libadpcmdec.so"
 #define LIB_MULAW_DECODER "libmulawdec.so"
+#define LIB_SVA_SOUNDMODEL "liblistensoundmodel2.so"
+
 #define BUF_SIZE 1024
 
 #define MAX_SND_CARD 8
@@ -274,34 +276,6 @@ typedef enum st_shared_buf_fmt {
     ST_SHARED_BUF_RAW,
 } st_shared_buf_fmt_t;
 
-/* soundmodel library wrapper functions */
-typedef int (*smlib_generate_sound_trigger_phrase_recognition_event_t)
-(
-    const struct sound_trigger_phrase_sound_model *sm,
-    const struct sound_trigger_recognition_config *config,
-    const void *payload,
-    unsigned int payload_size,
-    struct sound_trigger_phrase_recognition_event **r_event
-);
-
-typedef int (*smlib_generate_sound_trigger_recognition_config_payload_t)
-(
-   const struct sound_trigger_phrase_sound_model *sm,
-   const struct sound_trigger_recognition_config *config,
-   unsigned char **out_payload,
-   unsigned int *out_payload_size
-);
-
-typedef int (*smlib_generate_sound_trigger_phrase_recognition_event_v3_t)
-(
-    const struct sound_trigger_phrase_sound_model *sm,
-    const struct sound_trigger_recognition_config *config,
-    const void *payload,
-    unsigned int payload_size,
-    qsthw_recognition_event_type_t event_type,
-    void **r_event
-);
-
 struct st_lsm_params {
     struct listnode list_node;
     st_exec_mode_t exec_mode;
@@ -368,6 +342,7 @@ struct st_vendor_info {
     int app_type;
     bool is_qcva_uuid;
     bool is_qcmd_uuid;
+    bool merge_fs_soundmodels;
     unsigned int fwk_mode;
     int sample_rate;
     int format;
@@ -404,19 +379,6 @@ struct st_vendor_info {
     struct listnode lsm_usecase_list;
     struct listnode arm_ss_usecase_list;
     struct listnode lsm_ss_usecase_list;
-
-    void *smlib_handle;
-    smlib_generate_sound_trigger_recognition_config_payload_t
-                                    generate_st_recognition_config_payload;
-    smlib_generate_sound_trigger_recognition_config_payload_t
-                                    generate_st_recognition_config_payload_v2;
-
-    smlib_generate_sound_trigger_phrase_recognition_event_t
-                                    generate_st_phrase_recognition_event;
-    smlib_generate_sound_trigger_phrase_recognition_event_t
-                                    generate_st_phrase_recognition_event_v2;
-    smlib_generate_sound_trigger_phrase_recognition_event_v3_t
-                                        generate_st_phrase_recognition_event_v3;
 };
 
 typedef struct st_codec_backend_cfg {
@@ -739,6 +701,11 @@ bool platform_stdev_is_hwmad_backend
    void *platform,
    st_device_t st_device,
    st_exec_mode_t exec_mode
+);
+
+bool platform_stdev_is_dedicated_sva_path
+(
+   void *platform
 );
 
 int platform_stdev_derive_mixer_ctl_from_backend

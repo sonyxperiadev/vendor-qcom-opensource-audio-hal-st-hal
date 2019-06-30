@@ -49,6 +49,78 @@
 #include "st_session.h"
 #include "st_hw_defs.h"
 
+static int generate_sound_trigger_phrase_recognition_event_v3
+(
+    const struct sound_trigger_phrase_sound_model *phrase_sm,
+    const struct sound_trigger_recognition_config *rc_config,
+    const void *payload,
+    unsigned int payload_size,
+    qsthw_recognition_event_type_t event_type,
+    void **out_rc_event
+)
+{
+    unsigned int i = 0, j = 0, user_id = 0;
+    int rc = 0;
+
+    ALOGD("%s: Enter payload_size %d", __func__, payload_size);
+
+    if (!payload || !phrase_sm || !rc_config || !out_rc_event) {
+        ALOGE("%s: Null params", __func__);
+        return -EINVAL;
+    }
+
+    *out_rc_event = NULL;
+
+    switch (event_type) {
+    case QSTHW_RC_EVENT_TYPE_TIMESTAMP: {
+        struct qsthw_phrase_recognition_event *event;
+        struct sound_trigger_phrase_recognition_event *phrase_event;
+        event = calloc(1, sizeof(*event) + payload_size);
+        if (!event) {
+            ALOGE("%s: event allocation failed size %d",
+                   __func__, payload_size);
+            rc = -ENODEV;
+            break;
+        }
+
+        phrase_event = &event->phrase_event;
+
+        phrase_event->num_phrases = rc_config->num_phrases;
+        phrase_event->common.data_offset = sizeof(*event);
+        phrase_event->common.data_size = payload_size;
+
+        /* fill confidence levels */
+        for (i = 0; i < rc_config->num_phrases; i++) {
+             phrase_event->phrase_extras[i].id = rc_config->phrases[i].id;
+             phrase_event->phrase_extras[i].recognition_modes =
+                                 phrase_sm->phrases[0].recognition_mode;
+             phrase_event->phrase_extras[i].confidence_level =
+                                 ((char *)payload)[i];
+             phrase_event->phrase_extras[i].num_levels =
+                                 rc_config->phrases[i].num_levels;
+             for (j = 0; j < rc_config->phrases[i].num_levels; j++) {
+                  user_id = rc_config->phrases[i].levels[j].user_id;
+                  phrase_event->phrase_extras[i].levels[j].user_id = user_id;
+                  phrase_event->phrase_extras[i].levels[j].level =
+                                             ((char *)payload)[user_id];
+             }
+        }
+
+        /* Copy payload to event using offset generated above */
+        memcpy((char *)event + phrase_event->common.data_offset,
+               payload, payload_size);
+
+        *out_rc_event = (struct qsthw_phrase_recognition_event *)event;
+        break;
+    }
+    default:
+        ALOGE("%s: Invalid event type passed %d", __func__, event_type);
+        rc = -EINVAL;
+        break;
+    }
+    return rc;
+}
+
 bool sthw_extn_check_process_det_ev_support()
 {
     return true;
@@ -56,20 +128,19 @@ bool sthw_extn_check_process_det_ev_support()
 
 /* recognition event with timestamp */
 int sthw_extn_process_detection_event_keyphrase(
-    st_session_t *st_ses, uint64_t timestamp, int detect_status,
+    st_proxy_session_t *st_ses, uint64_t timestamp, int detect_status,
     void *payload, size_t payload_size,
     struct sound_trigger_phrase_recognition_event **event)
 {
-    st_hw_session_t *st_hw_ses = NULL;
+    st_hw_session_t *st_hw_ses = st_ses->hw_ses_current;
+    st_session_t *stc_ses = st_ses->det_stc_ses;
     struct qsthw_phrase_recognition_event *local_event = NULL;
     struct st_vendor_info *v_info = st_ses->vendor_uuid_info;
-    struct sound_trigger_phrase_sound_model *phrase_sm= st_ses->sm_data;
+    struct sound_trigger_phrase_sound_model *phrase_sm = stc_ses->phrase_sm;
 
     int status = 0;
     unsigned int i, j;
     qsthw_recognition_event_type_t event_type = QSTHW_RC_EVENT_TYPE_TIMESTAMP;
-
-    st_hw_ses = st_ses->hw_ses_current;
 
     if (st_hw_ses->is_generic_event) {
         /*
@@ -104,19 +175,15 @@ int sthw_extn_process_detection_event_keyphrase(
         free(generic_phrase_event);
         *event = &local_event->phrase_event;
         goto exit;
-    } else if (v_info && v_info->smlib_handle) {
+    } else if (v_info->is_qcva_uuid) {
         /* if smlib is present, get the event from it, else send the
          * DSP received payload as it is to App
          */
-        status = v_info->generate_st_phrase_recognition_event_v3(
-                                        phrase_sm,
-                                        st_ses->rc_config,
-                                        payload,
-                                        payload_size,
-                                        event_type,
-                                        (void *)&local_event);
+        status = generate_sound_trigger_phrase_recognition_event_v3(
+            phrase_sm, stc_ses->rc_config, payload, payload_size,
+            event_type, (void *)&local_event);
 
-        if (status) {
+        if (status || !local_event) {
             ALOGW("%s: smlib fill recognition event failed, status %d",
                   __func__, status);
             goto exit;
@@ -130,11 +197,12 @@ int sthw_extn_process_detection_event_keyphrase(
             goto exit;
         }
 
-        memcpy(local_event->phrase_event.phrase_extras, st_ses->rc_config->phrases,
-               st_ses->rc_config->num_phrases *
-               sizeof(struct sound_trigger_phrase_recognition_extra));
+        memcpy(local_event->phrase_event.phrase_extras,
+            stc_ses->rc_config->phrases,
+            stc_ses->rc_config->num_phrases *
+            sizeof(struct sound_trigger_phrase_recognition_extra));
 
-        local_event->phrase_event.num_phrases = st_ses->rc_config->num_phrases;
+        local_event->phrase_event.num_phrases = stc_ses->rc_config->num_phrases;
         local_event->phrase_event.common.data_offset = sizeof(*local_event);
         local_event->phrase_event.common.data_size = payload_size;
         memcpy((char *)local_event + local_event->phrase_event.common.data_offset,
@@ -147,9 +215,9 @@ int sthw_extn_process_detection_event_keyphrase(
     local_event->timestamp = timestamp;
 
     local_event->phrase_event.common.status = detect_status;
-    local_event->phrase_event.common.type = st_ses->sm_data->common.type;;
-    local_event->phrase_event.common.model = st_ses->sm_handle;
-    local_event->phrase_event.common.capture_available = st_ses->capture_requested;
+    local_event->phrase_event.common.type = phrase_sm->common.type;;
+    local_event->phrase_event.common.model = stc_ses->sm_handle;
+    local_event->phrase_event.common.capture_available = stc_ses->capture_requested;
     local_event->phrase_event.common.capture_delay_ms = 0;
     local_event->phrase_event.common.capture_preamble_ms = 0;
     local_event->phrase_event.common.audio_config.sample_rate =
@@ -170,11 +238,11 @@ int sthw_extn_process_detection_event_keyphrase(
         }
     }
 
-    ALOGI("%s:[%d] send keyphrase recognition event %d", __func__,
-                     st_ses->sm_handle, detect_status);
-    ALOGV("%s:[%d] status=%d, type=%d, model=%d, capture_avaiable=%d, "
+    ALOGI("%s:[c%d] send keyphrase recognition event %d", __func__,
+                     stc_ses->sm_handle, detect_status);
+    ALOGV("%s:[c%d] status=%d, type=%d, model=%d, capture_avaiable=%d, "
            "num_phrases=%d, id=%d, timestamp = %" PRIu64,
-           __func__, st_ses->sm_handle, local_event->phrase_event.common.status,
+           __func__, stc_ses->sm_handle, local_event->phrase_event.common.status,
            local_event->phrase_event.common.type, local_event->phrase_event.common.model,
            local_event->phrase_event.common.capture_available, local_event->phrase_event.num_phrases,
            local_event->phrase_event.phrase_extras[0].id, local_event->timestamp);

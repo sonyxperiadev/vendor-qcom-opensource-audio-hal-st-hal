@@ -53,12 +53,6 @@ typedef enum st_hw_sess_event_id {
     ST_HW_SESS_EVENT_MAX
 }  st_hw_sess_event_id_t;
 
-typedef enum {
-    ST_HW_SESS_DET_LOW_POWER_MODE,
-    ST_HW_SESS_DET_HIGH_PERF_MODE,
-    ST_HW_SESS_DET_UNKNOWN_MODE = 0xFF,
-}  st_hw_sess_det_mode_t;
-
 typedef struct st_hw_sess_detected_ev {
     uint64_t timestamp;
     int detect_status;
@@ -75,6 +69,15 @@ typedef struct st_hw_sess_event {
 
 typedef void (*hw_ses_event_callback_t)(st_hw_sess_event_t *event, void *cookie);
 
+struct st_hw_ses_config {
+    unsigned int client_req_hist_buf;
+    unsigned int client_req_preroll;
+    unsigned char *conf_levels;
+    unsigned int num_conf_levels;
+    char *custom_data;
+    unsigned int custom_data_size;
+};
+
 struct st_hw_session {
 
     struct st_session_fptrs *fptrs;
@@ -84,37 +87,34 @@ struct st_hw_session {
     struct pcm_config  config;
     struct st_vendor_info *vendor_uuid_info;
 
-    unsigned int num_conf_levels;
-    unsigned char *conf_levels;
-
     hw_ses_event_callback_t callback_to_st_session;
     void *cookie;
 
     st_exec_mode_t exec_mode;
 
     enum sound_trigger_states state;
-    sound_model_handle_t sm_handle; /* used when logging debug info */
+    sound_model_handle_t sm_handle; /* used when logging */
     struct sound_trigger_device *stdev;
 
     st_device_t st_device;
     char *st_device_name;
-    unsigned int client_req_hist_buf;
-    unsigned int client_req_preroll;
     struct listnode *second_stage_list;
     uint32_t kw_start_idx;
     uint32_t kw_end_idx;
     int32_t user_level;
     bool enable_second_stage;
-    void *conf_levels_info;
     bool is_generic_event;
     struct listnode lsm_ss_cfg_list;
     bool lpi_enable;
-    st_hw_sess_det_mode_t client_req_det_mode;
-    struct sound_trigger_recognition_config *rc_config;
+    bool lab_enabled;
+
     int rc_config_update_counter;
     uint64_t first_stage_det_event_time;
     uint64_t second_stage_det_event_time;
     st_buffer_t *buffer;
+
+    struct st_hw_ses_config sthw_cfg;
+    bool sthw_cfg_updated;
 };
 
 typedef struct st_hw_session st_hw_session_t;
@@ -122,22 +122,20 @@ typedef struct st_hw_session st_hw_session_t;
 /* Function pointers to routing layers */
 typedef void (*sound_trigger_init_session_t)(st_hw_session_t *);
 typedef int (*sound_trigger_reg_sm_t)(st_hw_session_t *,
-    void*,  sound_trigger_sound_model_type_t sm_type);
+    void*,  unsigned int, sound_trigger_sound_model_type_t sm_type);
 typedef int (*sound_trigger_reg_sm_params_t)(st_hw_session_t *,
     unsigned int recognition_mode, bool capture_requested,
     struct sound_trigger_recognition_config *rc_config,
     sound_trigger_sound_model_type_t sm_type, void * sm_data);
 
-typedef int (*sound_trigger_dereg_sm_t)(st_hw_session_t *,
-    bool capture_requested);
+typedef int (*sound_trigger_dereg_sm_t)(st_hw_session_t *);
 typedef int (*sound_trigger_dereg_sm_params_t)(st_hw_session_t *);
 typedef int (*sound_trigger_start_t)(st_hw_session_t *);
-typedef int (*sound_trigger_restart_t)(st_hw_session_t *, unsigned int, bool,
+typedef int (*sound_trigger_restart_t)(st_hw_session_t *, unsigned int,
    struct sound_trigger_recognition_config *,
    sound_trigger_sound_model_type_t, void *);
 typedef int (*sound_trigger_stop_t)(st_hw_session_t *);
-typedef int (*sound_trigger_stop_buffering_t)(st_hw_session_t *,
-    bool capture_requested);
+typedef int (*sound_trigger_stop_buffering_t)(st_hw_session_t *);
 typedef int (*sound_trigger_set_device_t)(st_hw_session_t *, bool);
 typedef int (*sound_trigger_read_pcm_t)(st_hw_session_t *,
                               unsigned char *, unsigned int );

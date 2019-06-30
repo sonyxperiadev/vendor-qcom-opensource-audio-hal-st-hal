@@ -185,6 +185,7 @@ struct st_hw_session_lsm {
     pthread_mutex_t callback_thread_lock;
 
     bool lab_buffers_allocated;
+    bool lab_on_detection;
 
     void *adpcm_dec_state;
 
