@@ -65,6 +65,17 @@
 #define IS_SS_DETECTION_SUCCESS(det)\
     !(det & (KEYWORD_DETECTION_REJECT | USER_VERIFICATION_REJECT))
 
+#define IS_KEYWORD_DETECTION_MODEL(sm_id) (sm_id & ST_SM_ID_SVA_KWD)
+
+#define IS_USER_VERIFICATION_MODEL(sm_id) (sm_id & ST_SM_ID_SVA_VOP)
+
+#define IS_SECOND_STAGE_MODEL(sm_id)\
+    ((sm_id & ST_SM_ID_SVA_KWD) || (sm_id & ST_SM_ID_SVA_VOP))
+
+#define IS_MATCHING_SS_MODEL(usecase_sm_id, levels_sm_id)\
+    ((usecase_sm_id & levels_sm_id) ||\
+    ((usecase_sm_id & ST_SM_ID_SVA_RNN) && (levels_sm_id & ST_SM_ID_SVA_CNN)))
+
 #define STATE_TRANSITION(st_session, new_state_fn)\
 do {\
     if (st_session->current_state != new_state_fn) {\
@@ -2034,16 +2045,16 @@ static int parse_rc_config_key_conf_levels
                         (void *)sm_levels, out_conf_levels, out_num_conf_levels,
                         stc_ses->conf_levels_intf_version);
                 gmm_conf_found = true;
-            } else if ((sm_levels->sm_id == ST_SM_ID_SVA_CNN) ||
-                       (sm_levels->sm_id == ST_SM_ID_SVA_VOP)) {
-                confidence_level = (sm_levels->sm_id == ST_SM_ID_SVA_CNN) ?
+            } else if (IS_SECOND_STAGE_MODEL(sm_levels->sm_id)) {
+                confidence_level = IS_KEYWORD_DETECTION_MODEL(sm_levels->sm_id) ?
                     sm_levels->kw_levels[0].kw_level:
                     sm_levels->kw_levels[0].user_levels[0].level;
                 if (arm_second_stage) {
                     list_for_each(node, &stc_ses->second_stage_list) {
                         st_sec_stage = node_to_item(node, st_arm_second_stage_t,
                             list_node);
-                        if (st_sec_stage->ss_info->sm_id == sm_levels->sm_id)
+                        if (IS_MATCHING_SS_MODEL(st_sec_stage->ss_info->sm_id,
+                                                 sm_levels->sm_id))
                             st_sec_stage->ss_session->confidence_threshold =
                                 confidence_level;
                     }
@@ -2051,7 +2062,8 @@ static int parse_rc_config_key_conf_levels
                     list_for_each(node, &st_hw_ses->lsm_ss_cfg_list) {
                         ss_cfg = node_to_item(node, st_lsm_ss_config_t,
                             list_node);
-                        if (ss_cfg->ss_info->sm_id == sm_levels->sm_id)
+                        if (IS_MATCHING_SS_MODEL(ss_cfg->ss_info->sm_id,
+                                                 sm_levels->sm_id))
                             ss_cfg->confidence_threshold = confidence_level;
                     }
                 }
@@ -2091,18 +2103,17 @@ static int parse_rc_config_key_conf_levels
                         (void *)sm_levels_v2, out_conf_levels,
                         out_num_conf_levels, stc_ses->conf_levels_intf_version);
                 gmm_conf_found = true;
-            } else if ((sm_levels_v2->sm_id == ST_SM_ID_SVA_CNN) ||
-                       (sm_levels_v2->sm_id == ST_SM_ID_SVA_VOP)) {
+            } else if (IS_SECOND_STAGE_MODEL(sm_levels_v2->sm_id)) {
                 confidence_level_v2 =
-                    (sm_levels_v2->sm_id == ST_SM_ID_SVA_CNN) ?
+                    (IS_KEYWORD_DETECTION_MODEL(sm_levels_v2->sm_id)) ?
                     sm_levels_v2->kw_levels[0].kw_level:
                     sm_levels_v2->kw_levels[0].user_levels[0].level;
                 if (arm_second_stage) {
                     list_for_each(node, &stc_ses->second_stage_list) {
                         st_sec_stage = node_to_item(node, st_arm_second_stage_t,
                             list_node);
-                        if (st_sec_stage->ss_info->sm_id ==
-                            sm_levels_v2->sm_id)
+                        if (IS_MATCHING_SS_MODEL(st_sec_stage->ss_info->sm_id,
+                                                 sm_levels_v2->sm_id))
                             st_sec_stage->ss_session->confidence_threshold =
                                 confidence_level_v2;
                     }
@@ -2110,7 +2121,8 @@ static int parse_rc_config_key_conf_levels
                     list_for_each(node, &st_hw_ses->lsm_ss_cfg_list) {
                         ss_cfg = node_to_item(node, st_lsm_ss_config_t,
                             list_node);
-                        if (ss_cfg->ss_info->sm_id == sm_levels_v2->sm_id)
+                        if (IS_MATCHING_SS_MODEL(ss_cfg->ss_info->sm_id,
+                                                 sm_levels_v2->sm_id))
                             ss_cfg->confidence_threshold = confidence_level_v2;
                     }
                 }
@@ -2865,9 +2877,9 @@ static int pack_opaque_data_conf_levels(
 
     list_for_each(node, &stc_ses->second_stage_list) {
         st_sec_stage = node_to_item(node, st_arm_second_stage_t, list_node);
-        if (st_sec_stage->ss_info->sm_id == ST_SM_ID_SVA_CNN) {
+        if (IS_KEYWORD_DETECTION_MODEL(st_sec_stage->ss_info->sm_id)) {
             kw_level = st_sec_stage->ss_session->confidence_score;
-        } else if (st_sec_stage->ss_info->sm_id == ST_SM_ID_SVA_VOP) {
+        } else if (IS_USER_VERIFICATION_MODEL(st_sec_stage->ss_info->sm_id)) {
             user_level = st_sec_stage->ss_session->confidence_score;
         }
     }
@@ -2898,9 +2910,9 @@ static int pack_opaque_data_conf_levels(
                                 payload_size, user_id);
                     }
                 }
-            } else if (conf_levels->conf_levels[i].sm_id == ST_SM_ID_SVA_CNN) {
+            } else if (IS_KEYWORD_DETECTION_MODEL(conf_levels->conf_levels[i].sm_id)) {
                 conf_levels->conf_levels[i].kw_levels[0].kw_level = kw_level;
-            } else if (conf_levels->conf_levels[i].sm_id == ST_SM_ID_SVA_VOP) {
+            } else if (IS_USER_VERIFICATION_MODEL(conf_levels->conf_levels[i].sm_id)) {
                 /*
                  * Fill both the keyword and user confidence level with the
                  * confidence score returned from the voiceprint algorithm.
@@ -2938,11 +2950,9 @@ static int pack_opaque_data_conf_levels(
                                 payload_size, user_id);
                     }
                 }
-            } else if (conf_levels_v2->conf_levels[i].sm_id ==
-                       ST_SM_ID_SVA_CNN) {
+            } else if (IS_KEYWORD_DETECTION_MODEL(conf_levels_v2->conf_levels[i].sm_id)) {
                 conf_levels_v2->conf_levels[i].kw_levels[0].kw_level = kw_level;
-            } else if (conf_levels_v2->conf_levels[i].sm_id ==
-                       ST_SM_ID_SVA_VOP) {
+            } else if (IS_USER_VERIFICATION_MODEL(conf_levels_v2->conf_levels[i].sm_id)) {
                 /*
                  * Fill both the keyword and user confidence level with the
                  * confidence score returned from the voiceprint algorithm.
@@ -3003,10 +3013,10 @@ static int pack_recognition_event_conf_levels(
 
     list_for_each(node, &stc_ses->second_stage_list) {
         st_sec_stage = node_to_item(node, st_arm_second_stage_t, list_node);
-        if (st_sec_stage->ss_info->sm_id == ST_SM_ID_SVA_CNN) {
+        if (IS_KEYWORD_DETECTION_MODEL(st_sec_stage->ss_info->sm_id)) {
             local_event->phrase_extras[0].confidence_level =
                 (uint8_t)st_sec_stage->ss_session->confidence_score;
-        } else if (st_sec_stage->ss_info->sm_id == ST_SM_ID_SVA_VOP) {
+        } else if (IS_USER_VERIFICATION_MODEL(st_sec_stage->ss_info->sm_id)) {
             local_event->phrase_extras[0].levels[0].level =
                 (uint8_t)st_sec_stage->ss_session->confidence_score;
         }
@@ -3079,7 +3089,7 @@ static int parse_generic_event_and_pack_opaque_data(
             list_for_each(node, &stc_ses->second_stage_list) {
                 st_sec_stage = node_to_item(node, st_arm_second_stage_t,
                                             list_node);
-                if (st_sec_stage->ss_info->sm_id == ST_SM_ID_SVA_CNN) {
+                if (IS_KEYWORD_DETECTION_MODEL(st_sec_stage->ss_info->sm_id)) {
                     kw_indices->start_index =
                         st_sec_stage->ss_session->kw_start_idx;
                     kw_indices->end_index =
@@ -3324,7 +3334,7 @@ static int process_detection_event_keyphrase(
 
         list_for_each(node, &stc_ses->second_stage_list) {
             st_sec_stage = node_to_item(node, st_arm_second_stage_t, list_node);
-            if (st_sec_stage->ss_info->sm_id == ST_SM_ID_SVA_CNN) {
+            if (IS_KEYWORD_DETECTION_MODEL(st_sec_stage->ss_info->sm_id)) {
                 enable_kw_indices = true;
                 opaque_size += sizeof(struct st_param_header) +
                     sizeof(struct st_keyword_indices_info);
@@ -3394,7 +3404,7 @@ static int process_detection_event_keyphrase(
             list_for_each(node, &stc_ses->second_stage_list) {
                 st_sec_stage = node_to_item(node, st_arm_second_stage_t,
                 list_node);
-                if (st_sec_stage->ss_info->sm_id == ST_SM_ID_SVA_CNN) {
+                if (IS_KEYWORD_DETECTION_MODEL(st_sec_stage->ss_info->sm_id)) {
                     kw_indices->start_index =
                         st_sec_stage->ss_session->kw_start_idx;
                     kw_indices->end_index =

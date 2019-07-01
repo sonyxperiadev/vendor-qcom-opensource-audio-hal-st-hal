@@ -2748,8 +2748,8 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
         if (param_tag_tracker & PARAM_OPERATION_MODE_BIT) {
             op_params = &param_info[param_count++];
 
-            /* CNN supports only keyword detection */
-            if (ss_cfg->params->common_params.sm_id == ST_SM_ID_SVA_CNN)
+            /* CNN and RNN only support keyword detection */
+            if (ss_cfg->params->common_params.sm_id & ST_SM_ID_SVA_KWD)
                 det_mode.mode = LSM_MODE_KEYWORD_ONLY_DETECTION;
 
             op_params->param_size = sizeof(det_mode);
