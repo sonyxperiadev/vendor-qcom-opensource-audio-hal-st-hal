@@ -80,7 +80,7 @@ bool st_hw_check_ses_ss_usecase_allowed(st_session_t *st_ses)
      * Second stage is only supported on an adsp session,
      * and when multi-stage support is available in lsm drivers.
      */
-    if (!st_ses || st_ses->hw_proxy_ses ||
+    if (!st_ses || !st_ses->hw_proxy_ses ||
         !st_ses->hw_proxy_ses->hw_ses_adsp ||
         !st_hw_check_multi_stage_lsm_support()) {
         return false;

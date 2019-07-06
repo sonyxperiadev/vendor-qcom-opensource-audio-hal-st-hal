@@ -474,7 +474,7 @@ static int query_sound_model(struct sound_trigger_device *stdev,
     sm_info->num_users = sm_header.numUsers;
 
     tmp = sm_header.numKeywords;
-    ALOGV("%s: stdb: model.data %p, model.size %d", __func__, model.data,
+    ALOGV("%s: stdb: model.data %pK, model.size %d", __func__, model.data,
             model.size);
     sm_ret = stdev->smlib_getKeywordPhrases(&model, &tmp, sm_info->keyphrases);
     if (sm_ret) {
@@ -628,7 +628,7 @@ static int add_sound_model(st_session_t *stc_ses, unsigned char *sm_data,
 
     stc_ses->sm_info.sm_data = sm_data;
     stc_ses->sm_info.sm_size = sm_size;
-    ALOGV("%s: stc_ses %p - sm_data %p, sm_size %d", __func__,
+    ALOGV("%s: stc_ses %pK - sm_data %pK, sm_size %d", __func__,
           stc_ses, stc_ses->sm_info.sm_data,
           stc_ses->sm_info.sm_size);
 
@@ -770,7 +770,7 @@ static int delete_sound_model(st_session_t *stc_ses)
         return 0;
     }
 
-    ALOGV("%s: stc_ses %p - sm_data %p, sm_size %d", __func__,
+    ALOGV("%s: stc_ses %pK - sm_data %pK, sm_size %d", __func__,
           stc_ses, stc_ses->sm_info.sm_data,
           stc_ses->sm_info.sm_size);
 
@@ -1378,17 +1378,25 @@ static int fill_conf_levels_payload_from_rc_config
    const struct sound_trigger_phrase_sound_model *phrase_sm,
    const struct sound_trigger_recognition_config *rc_config,
    unsigned char *conf_levels,
-   unsigned int num_conf_levels,
    unsigned int total_num_users
 )
 {
     int status = 0;
     unsigned int user_level, user_id;
     unsigned int i = 0, j = 0;
+    unsigned int num_conf_levels = 0;
     unsigned char *user_id_tracker;
 
-    if (!phrase_sm || !rc_config || !conf_levels || !num_conf_levels) {
+    if (!phrase_sm || !rc_config || !conf_levels) {
         ALOGE("%s: ERROR. Invalid inputs",__func__);
+        return -EINVAL;
+    }
+
+    if ((UINT32_MAX - total_num_users) > rc_config->num_phrases)
+        num_conf_levels = total_num_users + rc_config->num_phrases;
+
+    if (!num_conf_levels) {
+        ALOGE("%s: ERROR. Invalid num_conf_levels input", __func__);
         return -EINVAL;
     }
 
@@ -1425,7 +1433,13 @@ static int fill_conf_levels_payload_from_rc_config
     }
 
     for (i = 0; i < rc_config->num_phrases; i++) {
-        conf_levels[i] = rc_config->phrases[i].confidence_level;
+        if (i < num_conf_levels) {
+            conf_levels[i] = rc_config->phrases[i].confidence_level;
+        } else {
+            ALOGE("%s: ERROR. Invalid number of phrases", __func__);
+            status = -EINVAL;
+            goto exit;
+        }
         for (j = 0; j < rc_config->phrases[i].num_levels; j++) {
             user_level = rc_config->phrases[i].levels[j].level;
             user_id = rc_config->phrases[i].levels[j].user_id;
@@ -1497,7 +1511,7 @@ int generate_conf_levels_payload_from_rc_config
     }
 
     status = fill_conf_levels_payload_from_rc_config(phrase_sm, rc_config,
-       conf_levels, num_conf_levels, total_num_users);
+       conf_levels, total_num_users);
     if (status) {
         ALOGE("%s: fill config payload failed, error %d", __func__, status);
         goto exit;
@@ -1565,7 +1579,7 @@ int generate_conf_levels_payload_from_rc_config_v2
     conf_levels[0] = 1; /* minor version */
     conf_levels[1] = num_conf_levels; /* num_active_models */
     status = fill_conf_levels_payload_from_rc_config(phrase_sm, rc_config,
-        conf_levels + 2, num_conf_levels, total_num_users);
+        conf_levels + 2, total_num_users);
     if (status) {
         ALOGE("%s: fill config payload failed, error %d", __func__, status);
         goto exit;
@@ -1592,7 +1606,6 @@ static int fill_sound_trigger_recognition_config_payload
 (
    const void *sm_levels_generic,
    unsigned char *conf_levels,
-   unsigned int num_conf_levels,
    unsigned int total_num_users,
    uint32_t version
 )
@@ -1600,6 +1613,7 @@ static int fill_sound_trigger_recognition_config_payload
     int status = 0;
     unsigned int user_level = 0, user_id = 0;
     unsigned int i = 0, j = 0;
+    unsigned int num_conf_levels = 0;
     unsigned char *user_id_tracker = NULL;
     struct st_sound_model_conf_levels *sm_levels = NULL;
     struct st_sound_model_conf_levels_v2 *sm_levels_v2 = NULL;
@@ -1622,10 +1636,19 @@ static int fill_sound_trigger_recognition_config_payload
 
     if (version != CONF_LEVELS_INTF_VERSION_0002) {
         sm_levels = (struct st_sound_model_conf_levels *)sm_levels_generic;
-        if (!sm_levels || !conf_levels || !num_conf_levels) {
+        if (!sm_levels || !conf_levels) {
             ALOGE("%s: ERROR. Invalid inputs", __func__);
             return -EINVAL;
         }
+
+        if ((UINT32_MAX - total_num_users) > sm_levels->num_kw_levels)
+            num_conf_levels = total_num_users + sm_levels->num_kw_levels;
+
+        if (!num_conf_levels) {
+            ALOGE("%s: ERROR. Invalid num_conf_levels input", __func__);
+            return -EINVAL;
+        }
+
         user_id_tracker = calloc(1, num_conf_levels);
         if (!user_id_tracker) {
             ALOGE("%s: failed to allocate user_id_tracker", __func__);
@@ -1643,7 +1666,13 @@ static int fill_sound_trigger_recognition_config_payload
         }
 
         for (i = 0; i < sm_levels->num_kw_levels; i++) {
-            conf_levels[i] = sm_levels->kw_levels[i].kw_level;
+            if (i < num_conf_levels) {
+                conf_levels[i] = sm_levels->kw_levels[i].kw_level;
+            } else {
+                ALOGE("%s: ERROR. Invalid numver of kw levels", __func__);
+                status = -EINVAL;
+                goto exit;
+            }
             for (j = 0; j < sm_levels->kw_levels[i].num_user_levels; j++) {
                 user_level = sm_levels->kw_levels[i].user_levels[j].level;
                 user_id = sm_levels->kw_levels[i].user_levels[j].user_id;
@@ -1671,10 +1700,19 @@ static int fill_sound_trigger_recognition_config_payload
     } else {
         sm_levels_v2 =
             (struct st_sound_model_conf_levels_v2 *)sm_levels_generic;
-        if (!sm_levels_v2 || !conf_levels || !num_conf_levels) {
+        if (!sm_levels_v2 || !conf_levels) {
             ALOGE("%s: ERROR. Invalid inputs", __func__);
             return -EINVAL;
         }
+
+        if ((UINT32_MAX - total_num_users) > sm_levels_v2->num_kw_levels)
+            num_conf_levels = total_num_users + sm_levels_v2->num_kw_levels;
+
+        if (!num_conf_levels) {
+            ALOGE("%s: ERROR. Invalid num_conf_levels input", __func__);
+            return -EINVAL;
+        }
+
         user_id_tracker = calloc(1, num_conf_levels);
         if (!user_id_tracker) {
             ALOGE("%s: failed to allocate user_id_tracker", __func__);
@@ -1692,7 +1730,13 @@ static int fill_sound_trigger_recognition_config_payload
         }
 
         for (i = 0; i < sm_levels_v2->num_kw_levels; i++) {
-            conf_levels[i] = sm_levels_v2->kw_levels[i].kw_level;
+            if (i < num_conf_levels) {
+                conf_levels[i] = sm_levels_v2->kw_levels[i].kw_level;
+            } else {
+                ALOGE("%s: ERROR. Invalid numver of kw levels", __func__);
+                status = -EINVAL;
+                goto exit;
+            }
             for (j = 0; j < sm_levels_v2->kw_levels[i].num_user_levels; j++) {
                 user_level = sm_levels_v2->kw_levels[i].user_levels[j].level;
                 user_id = sm_levels_v2->kw_levels[i].user_levels[j].user_id;
@@ -1799,7 +1843,7 @@ static int generate_sound_trigger_recognition_config_payload
     }
 
     status = fill_sound_trigger_recognition_config_payload(sm_levels_generic,
-        conf_levels, num_conf_levels, total_num_users, version);
+        conf_levels, total_num_users, version);
     if (status) {
         ALOGE("%s: fill config payload failed, error %d", __func__, status);
         goto exit;
@@ -1893,7 +1937,7 @@ static int generate_sound_trigger_recognition_config_payload_v2
     conf_levels[0] = 1; /* minor version */
     conf_levels[1] = num_conf_levels; /* num_active_models */
     status = fill_sound_trigger_recognition_config_payload(sm_levels_generic,
-        conf_levels + 2, num_conf_levels, total_num_users, version);
+        conf_levels + 2, total_num_users, version);
     if (status) {
         ALOGE("%s: fill config payload failed, error %d", __func__, status);
         goto exit;
