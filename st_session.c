@@ -2151,14 +2151,16 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
     int status = 0;
     bool enable_lab = false;
 
-
-    ST_DBG_DECLARE(FILE *rc_opaque_fd = NULL; static int rc_opaque_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(rc_opaque_fd, ST_DEBUG_DUMP_LOCATION,
-                        "rc_config_opaque_data", "bin", rc_opaque_cnt++);
-    ST_DBG_FILE_WRITE(rc_opaque_fd,
-                      (uint8_t *)rc_config + rc_config->data_offset,
-                      rc_config->data_size);
-    ST_DBG_FILE_CLOSE(rc_opaque_fd);
+    if (st_ses->stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *rc_opaque_fd = NULL;
+            static int rc_opaque_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(rc_opaque_fd, ST_DEBUG_DUMP_LOCATION,
+            "rc_config_opaque_data", "bin", rc_opaque_cnt++);
+        ST_DBG_FILE_WRITE(rc_opaque_fd,
+            (uint8_t *)rc_config + rc_config->data_offset,
+            rc_config->data_size);
+        ST_DBG_FILE_CLOSE(rc_opaque_fd);
+    }
 
     if (!st_hw_ses) {
         ALOGE("%s: NULL hw session !!!", __func__);
@@ -3203,11 +3205,14 @@ int process_detection_event_keyphrase_v2(
                 goto exit;
             }
 
-            ST_DBG_DECLARE(FILE *opaque_fd = NULL; static int opaque_cnt = 0);
-            ST_DBG_FILE_OPEN_WR(opaque_fd, ST_DEBUG_DUMP_LOCATION,
-                                "detection_opaque_data", "bin", opaque_cnt++);
-            ST_DBG_FILE_WRITE(opaque_fd, opaque_data, opaque_size);
-            ST_DBG_FILE_CLOSE(opaque_fd);
+            if (st_ses->stdev->enable_debug_dumps) {
+                ST_DBG_DECLARE(FILE *opaque_fd = NULL;
+                    static int opaque_cnt = 0);
+                ST_DBG_FILE_OPEN_WR(opaque_fd, ST_DEBUG_DUMP_LOCATION,
+                    "detection_opaque_data", "bin", opaque_cnt++);
+                ST_DBG_FILE_WRITE(opaque_fd, opaque_data, opaque_size);
+                ST_DBG_FILE_CLOSE(opaque_fd);
+            }
         } else {
             status = parse_generic_event_without_opaque_data(st_ses, payload,
                 payload_size, local_event);
@@ -3417,11 +3422,14 @@ static int process_detection_event_keyphrase(
                 st_hw_ses->second_stage_det_event_time;
         opaque_data += sizeof(struct st_timestamp_info);
 
-        ST_DBG_DECLARE(FILE *opaque_fd = NULL; static int opaque_cnt = 0);
-        ST_DBG_FILE_OPEN_WR(opaque_fd, ST_DEBUG_DUMP_LOCATION,
-                            "detection_opaque_data", "bin", opaque_cnt++);
-        ST_DBG_FILE_WRITE(opaque_fd, (opaque_data - opaque_size), opaque_size);
-        ST_DBG_FILE_CLOSE(opaque_fd);
+        if (st_ses->stdev->enable_debug_dumps) {
+            ST_DBG_DECLARE(FILE *opaque_fd = NULL; static int opaque_cnt = 0);
+            ST_DBG_FILE_OPEN_WR(opaque_fd, ST_DEBUG_DUMP_LOCATION,
+                                "detection_opaque_data", "bin", opaque_cnt++);
+            ST_DBG_FILE_WRITE(opaque_fd, (opaque_data - opaque_size),
+                              opaque_size);
+            ST_DBG_FILE_CLOSE(opaque_fd);
+        }
 
     } else {
         if (st_ses->vendor_uuid_info->is_qcva_uuid ||
@@ -4588,8 +4596,10 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         if (!status && st_ses->lab_enabled) {
             if (stc_ses->rc_config->capture_requested ||
                 !list_empty(&stc_ses->second_stage_list)) {
-                ST_DBG_FILE_OPEN_WR(st_ses->lab_fp, ST_DEBUG_DUMP_LOCATION,
-                    "lab_capture", "bin", file_cnt++);
+                if (st_ses->stdev->enable_debug_dumps) {
+                    ST_DBG_FILE_OPEN_WR(st_ses->lab_fp, ST_DEBUG_DUMP_LOCATION,
+                        "lab_capture", "bin", file_cnt++);
+                }
                 STATE_TRANSITION(st_ses, buffering_state_fn);
                 lab_enabled = true;
             } else {
@@ -5018,8 +5028,10 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         /* Note: this function may block if there is no PCM data ready*/
         hw_ses->fptrs->read_pcm(hw_ses, ev->payload.readpcm.out_buff,
             ev->payload.readpcm.out_buff_size);
-        ST_DBG_FILE_WRITE(st_ses->lab_fp, ev->payload.readpcm.out_buff,
-            ev->payload.readpcm.out_buff_size);
+        if (st_ses->stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(st_ses->lab_fp, ev->payload.readpcm.out_buff,
+                ev->payload.readpcm.out_buff_size);
+        }
         break;
     case ST_SES_EV_END_BUFFERING:
         if (stc_ses == st_ses->det_stc_ses) {
@@ -5052,7 +5064,8 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         hw_ses->fptrs->stop_buffering(hw_ses);
         STATE_TRANSITION(st_ses, active_state_fn);
         DISPATCH_EVENT(st_ses, *ev, status);
-        ST_DBG_FILE_CLOSE(st_ses->lab_fp);
+        if (st_ses->stdev->enable_debug_dumps)
+            ST_DBG_FILE_CLOSE(st_ses->lab_fp);
         break;
 
     case ST_SES_EV_SET_DEVICE:

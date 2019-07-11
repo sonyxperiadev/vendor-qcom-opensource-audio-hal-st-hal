@@ -151,6 +151,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_VAD_ENABLE "vad_enable"
 #define ST_PARAM_KEY_DEDICATED_SVA_PATH "dedicated_sva_path"
 #define ST_PARAM_KEY_DEDICATED_HEADSET_PATH "dedicated_headset_path"
+#define ST_PARAM_KEY_ENABLE_DEBUG_DUMPS "enable_debug_dumps"
 #define ST_PARAM_KEY_DAM_TOKEN_ID "dam_token_id"
 
 #ifndef Q6AFE_HWDEP_NODE
@@ -1144,6 +1145,14 @@ static int platform_set_common_config
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_DEDICATED_HEADSET_PATH);
         stdev->dedicated_headset_path =
+            !strncasecmp(str_value, "true", 4) ? true : false;
+    }
+
+    err = str_parms_get_str(parms, ST_PARAM_KEY_ENABLE_DEBUG_DUMPS,
+                            str_value, sizeof(str_value));
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_ENABLE_DEBUG_DUMPS);
+        stdev->enable_debug_dumps =
             !strncasecmp(str_value, "true", 4) ? true : false;
     }
 
