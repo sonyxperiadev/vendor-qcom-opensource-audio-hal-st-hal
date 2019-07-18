@@ -2505,6 +2505,16 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
         goto error_exit;
     }
 
+    if (!p_ses->stdev->lpi_enable && !p_ses->stdev->barge_in_mode) {
+        status = platform_stdev_update_ec_effect(p_ses->stdev->platform,
+            false);
+        if (status) {
+            ALOGE("%s: ERROR. Failed to update EC ref, returned status %d",
+                  __func__, status);
+            goto error_exit_1;
+        }
+    }
+
     /* SVA doesn't support per keyword recogntion mode.
        Use the per soundmodel recognition mode */
     if (recognition_mode & RECOGNITION_MODE_VOICE_TRIGGER){
@@ -3920,6 +3930,16 @@ static int route_enable_device(st_hw_session_t *p_ses, bool setting_device)
         ALOGE("%s: ERROR. pcm_start failed, %s",
               __func__, strerror(errno));
         goto exit_1;
+    }
+
+    if (!p_ses->stdev->lpi_enable && !p_ses->stdev->barge_in_mode) {
+        status = platform_stdev_update_ec_effect(p_ses->stdev->platform,
+            false);
+        if (status) {
+            ALOGE("%s: ERROR. Failed to update EC ref, %d",
+                  __func__, status);
+            goto exit_2;
+        }
     }
 
     status = ape_start(p_ses);

@@ -261,6 +261,10 @@ struct sound_trigger_device {
     int lpma_handle;
     bool is_charging;
     bool enable_debug_dumps;
+    bool support_barge_in_mode;
+    bool support_dynamic_ec_update;
+    bool screen_off;
+    bool barge_in_mode;
 };
 
 typedef struct sound_trigger_device sound_trigger_device_t;

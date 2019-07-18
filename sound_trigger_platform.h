@@ -279,7 +279,8 @@ typedef enum st_shared_buf_fmt {
 typedef enum {
     ST_PLATFORM_LPI_NONE,
     ST_PLATFORM_LPI_ENABLE,
-    ST_PLATFORM_LPI_DISABLE
+    ST_PLATFORM_LPI_DISABLE,
+    ST_PLATFORM_LPI_DISABLE_AND_BARGE_IN
 } st_platform_lpi_enable_t;
 
 struct st_lsm_params {
@@ -614,6 +615,12 @@ int platform_stdev_get_device_app_type
 (
    void *platform,
    st_profile_type_t profile_type
+);
+
+int platform_stdev_update_ec_effect
+(
+    void *platform,
+    bool enable_ec
 );
 
 void platform_stdev_send_ec_ref_cfg

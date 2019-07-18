@@ -2453,10 +2453,14 @@ static int start_hw_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses,
      * It is possible the BE LPI mode has been updated, but not the FE mode.
      * DSP requires both FE and BE to be in the same mode for any configuration
      * changes between LPI and non-LPI switch, so update the FE mode to the
-     * same as BE mode by re-opening LSM session.
+     * same as BE mode by re-opening LSM session. This is also used for
+     * other transition usecases which require dereg_sm and reg_sm.
      */
-    if (hw_ses->lpi_enable != hw_ses->stdev->lpi_enable) {
+    if (hw_ses->lpi_enable != hw_ses->stdev->lpi_enable ||
+        (hw_ses->barge_in_mode != hw_ses->stdev->barge_in_mode &&
+         !hw_ses->stdev->support_dynamic_ec_update)) {
         hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
+        hw_ses->barge_in_mode = hw_ses->stdev->barge_in_mode;
         if (!load_sm) {
             load_sm = true;
             status = hw_ses->fptrs->dereg_sm(hw_ses);

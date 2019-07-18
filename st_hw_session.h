@@ -106,6 +106,7 @@ struct st_hw_session {
     bool is_generic_event;
     struct listnode lsm_ss_cfg_list;
     bool lpi_enable;
+    bool barge_in_mode;
     bool lab_enabled;
 
     int rc_config_update_counter;

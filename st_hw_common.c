@@ -180,7 +180,7 @@ static bool is_projected_lpi_budget_available
     return true;
 }
 
-bool st_hw_check_lpi_support
+void st_hw_check_and_update_lpi
 (
     struct sound_trigger_device *stdev,
     st_session_t *st_ses
@@ -189,30 +189,34 @@ bool st_hw_check_lpi_support
     st_session_t *ses = NULL;
     struct listnode *ses_node = NULL;
 
+    stdev->lpi_enable = false;
+    stdev->barge_in_mode = true;
     /*
      * ST_PLATFORM_LPI_NONE is used for backward compatibility. With this
      * setting, the st_vendor_uuid->lpi_enable flag will be used.
      */
     if (stdev->platform_lpi_enable == ST_PLATFORM_LPI_DISABLE) {
         ALOGD("%s: lpi NOT enabled in platform setting", __func__);
-        return false;
+        return;
     } else if ((stdev->platform_lpi_enable == ST_PLATFORM_LPI_NONE) &&
                st_ses && !st_ses->vendor_uuid_info->lpi_enable) {
         ALOGD("%s: lpi NOT enabled for ses %d", __func__, st_ses->sm_handle);
-        return false;
+        return;
     }
 
     if (stdev->rx_concurrency_active || stdev->conc_voice_active ||
         stdev->conc_voip_active) {
         ALOGD("%s: lpi NOT supported due to concurrency", __func__);
-        return false;
+        return;
     }
 
     if (stdev->is_charging &&
         stdev->transit_to_non_lpi_on_battery_charging) {
         ALOGD("%s: lpi NOT supported. battery status %d", __func__,
             stdev->is_charging);
-        return false;
+        if (stdev->support_barge_in_mode)
+            stdev->barge_in_mode = false;
+        return;
     }
 
     list_for_each(ses_node, &stdev->sound_model_list) {
@@ -221,14 +225,23 @@ bool st_hw_check_lpi_support
         if (ses->client_req_det_mode == ST_DET_HIGH_PERF_MODE) {
             ALOGD("%s:[%d] lpi NOT supported due to high perf mode", __func__,
                 ses->sm_handle);
-            return false;
+            if (stdev->support_barge_in_mode)
+                stdev->barge_in_mode = false;
+            return;
         }
     }
 
+    if (!stdev->screen_off && stdev->support_barge_in_mode) {
+        ALOGD("%s: lpi NOT supported. Screen is on", __func__);
+        stdev->barge_in_mode = false;
+        return;
+    }
+
     if (stdev->platform_lpi_enable == ST_PLATFORM_LPI_NONE)
-        return is_projected_lpi_budget_available(stdev, st_ses);
+        stdev->lpi_enable = is_projected_lpi_budget_available(stdev, st_ses);
     else
-        return true;
+        stdev->lpi_enable = true;
+    stdev->barge_in_mode = !stdev->lpi_enable;
 }
 
 bool st_hw_check_vad_support
@@ -296,6 +309,8 @@ void st_hw_check_and_set_lpi_mode(st_session_t *stc_ses)
                 is_projected_lpi_budget_available(st_ses->stdev, stc_ses));
         } else {
             st_ses->hw_ses_adsp->lpi_enable = st_ses->stdev->lpi_enable;
+            st_ses->hw_ses_adsp->barge_in_mode =
+                st_ses->stdev->barge_in_mode;
         }
     }
     pthread_mutex_unlock(&st_ses->lock);
