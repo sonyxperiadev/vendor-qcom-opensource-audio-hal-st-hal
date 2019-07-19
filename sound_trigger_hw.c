@@ -876,6 +876,7 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
                 st_session_pause(p_ses);
             }
         }
+        platform_stdev_reset_backend_cfg(stdev->platform);
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
             if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
@@ -1125,6 +1126,7 @@ static void handle_battery_status_change(audio_event_info_t* config)
                 st_session_pause(p_ses);
             }
         }
+        platform_stdev_reset_backend_cfg(stdev->platform);
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
             if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
@@ -1998,6 +2000,7 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
     }
 
     st_session->sm_type = sound_model->type;
+    stdev->lpi_enable = st_hw_check_lpi_support(stdev, NULL);
     st_hw_check_and_set_lpi_mode(st_session);
 
     /* CPE DRAM can only be accessed by single client, i.e. Apps or CPE,
@@ -2118,7 +2121,7 @@ static int stdev_reconfig_backend_on_stop(st_session_t *stopped_ses)
     }
 
     struct st_vendor_info *stopped_v_info = stopped_ses->vendor_uuid_info;
-    ALOGD("%s:[%d] v_info %p", __func__, stopped_ses->sm_handle, stopped_v_info);
+    ALOGV("%s:[%d] v_info %p", __func__, stopped_ses->sm_handle, stopped_v_info);
 
     stopped_ses_channel_count =
         platform_stdev_get_backend_channel_count(stdev->platform,
@@ -2144,7 +2147,7 @@ static int stdev_reconfig_backend_on_stop(st_session_t *stopped_ses)
                       (st_session_is_active(ses) == false) &&
                       (st_session_is_buffering(ses) == false);
         if (is_stopped) {
-            ALOGV("%s:[%d]ses is stopped, ignore", __func__, ses->sm_handle);
+            ALOGV("%s:[%d] is stopped, ignore", __func__, ses->sm_handle);
             continue;
         }
 
