@@ -187,6 +187,7 @@ struct st_proxy_session {
 
     struct sound_model_info sm_info;
     FILE *lab_fp;
+    uint64_t detection_event_time;
 };
 
 /*
