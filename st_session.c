@@ -2356,11 +2356,12 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
          * handle here.
          * For now just copy the the current client data which is same
          * across SVA engines.
+         * Update the custom data for the case in which one client session
+         * does not have custom data and another one does.
          */
-        if (!sthw_cfg->custom_data) {
+        if (rc_config->data_size > sthw_cfg->custom_data_size) {
             sthw_cfg->custom_data = (char *)rc_config + rc_config->data_offset;
-            if (rc_config->data_size)
-                sthw_cfg->custom_data_size =  rc_config->data_size;
+            sthw_cfg->custom_data_size =  rc_config->data_size;
         }
 
     } else {
