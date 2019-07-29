@@ -2064,7 +2064,7 @@ static int ape_reg_sm(st_hw_session_t *p_ses, void *sm_data,
         return -ENODEV;
 
     platform_get_lsm_usecase(p_ses->stdev->platform, v_info,
-                             &p_lsm_ses->lsm_usecase, p_ses->exec_mode);
+        &p_lsm_ses->lsm_usecase, p_ses->exec_mode, p_ses->lpi_enable);
     if (!p_lsm_ses->lsm_usecase) {
         ALOGE("%s: couldn't get lsm usecase", __func__);
         goto sm_error;
@@ -2986,7 +2986,7 @@ static int cpe_reg_sm(st_hw_session_t *p_ses,
         return -ENODEV;
 
     platform_get_lsm_usecase(p_ses->stdev->platform, v_info,
-                             &p_lsm_ses->lsm_usecase, p_ses->exec_mode);
+        &p_lsm_ses->lsm_usecase, p_ses->exec_mode, p_ses->lpi_enable);
     if (!p_lsm_ses->lsm_usecase) {
         ALOGE("%s: couldn't get lsm usecase", __func__);
         goto sm_error;
@@ -3819,7 +3819,7 @@ static int route_enable_device(st_hw_session_t *p_ses, bool setting_device)
     capture_device = platform_stdev_get_capture_device(p_ses->stdev->platform);
 
     platform_get_lsm_usecase(p_ses->stdev->platform, v_info,
-        &p_lsm_ses->lsm_usecase, p_ses->exec_mode);
+        &p_lsm_ses->lsm_usecase, p_ses->exec_mode, p_ses->lpi_enable);
     if (!p_lsm_ses->lsm_usecase) {
         ALOGE("%s: failed to allocate lsm usecase for the session", __func__);
         return -ENODEV;

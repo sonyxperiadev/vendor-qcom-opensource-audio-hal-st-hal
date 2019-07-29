@@ -294,9 +294,7 @@ void st_hw_check_and_set_lpi_mode(st_session_t *stc_ses)
                 (st_ses->vendor_uuid_info->lpi_enable &&
                 is_projected_lpi_budget_available(st_ses->stdev, stc_ses));
         } else {
-            st_ses->hw_ses_adsp->lpi_enable =
-                (st_ses->stdev->platform_lpi_enable ==
-                 ST_PLATFORM_LPI_ENABLE) ? true: false;
+            st_ses->hw_ses_adsp->lpi_enable = st_ses->stdev->lpi_enable;
         }
     }
     pthread_mutex_unlock(&st_ses->lock);

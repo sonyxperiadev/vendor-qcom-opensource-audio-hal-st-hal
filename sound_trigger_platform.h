@@ -276,6 +276,12 @@ typedef enum st_shared_buf_fmt {
     ST_SHARED_BUF_RAW,
 } st_shared_buf_fmt_t;
 
+typedef enum {
+    ST_PLATFORM_LPI_NONE,
+    ST_PLATFORM_LPI_ENABLE,
+    ST_PLATFORM_LPI_DISABLE
+} st_platform_lpi_enable_t;
+
 struct st_lsm_params {
     struct listnode list_node;
     st_exec_mode_t exec_mode;
@@ -287,6 +293,7 @@ struct st_lsm_params {
     st_profile_type_t adm_cfg_profile;
     audio_devices_t capture_device;
     st_fluence_type_t fluence_type;
+    st_platform_lpi_enable_t lpi_enable;
 };
 
 struct st_gcs_params {
@@ -307,12 +314,6 @@ typedef enum {
     ST_SS_USECASE_TYPE_ARM,
     ST_SS_USECASE_TYPE_LSM
 } st_ss_usecase_type_t;
-
-typedef enum {
-    ST_PLATFORM_LPI_NONE,
-    ST_PLATFORM_LPI_ENABLE,
-    ST_PLATFORM_LPI_DISABLE
-} st_platform_lpi_enable_t;
 
 struct st_ss_usecase {
     union {
@@ -689,7 +690,8 @@ void platform_get_lsm_usecase
    void* platform,
    struct st_vendor_info* v_info,
    struct st_lsm_params** lsm_usecase,
-   st_exec_mode_t exec_mode
+   st_exec_mode_t exec_mode,
+   bool lpi_enable
 );
 
 int platform_stdev_get_xml_version(void* platform);

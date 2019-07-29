@@ -261,7 +261,6 @@ static inline void alloc_array_ptrs(char ***arr, unsigned int arr_len,
         ALOGV("%s: string array[%d] %p", __func__, i, (*arr)[i]);
 }
 
-
 static int merge_sound_models(struct sound_trigger_device *stdev,
     unsigned int num_models, listen_model_type *in_models[],
     listen_model_type *out_model)
@@ -6249,7 +6248,7 @@ int st_session_init(st_session_t *stc_ses, struct sound_trigger_device *stdev,
     stc_ses->state = ST_STATE_IDLE;
 
     if (st_ses) { /* Could get freed if other client exists */
-        st_ses ->vendor_uuid_info = v_info;
+        st_ses->vendor_uuid_info = v_info;
         st_ses->exec_mode = exec_mode;
         st_ses->sm_handle = sm_handle;
         st_ses->lab_fp = NULL;
