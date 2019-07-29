@@ -5630,9 +5630,9 @@ int st_session_pause(st_session_t *stc_ses)
     st_proxy_session_t *st_ses = stc_ses->hw_proxy_ses;
     st_session_ev_t ev = { .ev_id = ST_SES_EV_PAUSE, .stc_ses = stc_ses };
 
-    pthread_mutex_lock(&stc_ses->lock);
+    pthread_mutex_lock(&st_ses->lock);
     DISPATCH_EVENT(st_ses, ev, status);
-    pthread_mutex_unlock(&stc_ses->lock);
+    pthread_mutex_unlock(&st_ses->lock);
     return status;
 }
 
