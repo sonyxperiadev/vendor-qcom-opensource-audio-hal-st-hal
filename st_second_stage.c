@@ -126,6 +126,7 @@ static int start_keyword_detection(st_arm_second_stage_t *st_sec_stage)
     unsigned int det_status = KEYWORD_DETECTION_PENDING;
     uint64_t start_time = 0, end_time = 0;
     uint32_t bytes_processed_ms = 0;
+    bool first_frame_processed = false;
 
     ALOGV("%s: Enter", __func__);
 
@@ -207,6 +208,16 @@ static int start_keyword_detection(st_arm_second_stage_t *st_sec_stage)
             break;
         }
         ss_session->bytes_processed += ss_session->buff_sz;
+        /*
+         * The CNN algorithm requires the first frame to contain the buf_start
+         * up to the kwd_end_idx, followed by any variable size for subsequent
+         * frames. Reset the subsequent frame sizes to the driver requested
+         * buffer size (ex. 120ms)
+         */
+        if (!first_frame_processed) {
+            ss_session->buff_sz = ss_session->lab_buf_sz;
+            first_frame_processed = true;
+        }
     }
 
 exit:
