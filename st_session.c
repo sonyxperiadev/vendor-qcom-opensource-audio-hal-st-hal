@@ -1217,8 +1217,7 @@ static bool update_hw_config_on_stop(st_proxy_session_t *st_ses,
     int hb_sz = 0, pr_sz = 0;
     bool active = false, enable_lab = false;
 
-    if (!st_ses->vendor_uuid_info->merge_fs_soundmodels ||
-        !st_ses->sm_info.sm_merged) {
+    if (!st_ses->vendor_uuid_info->merge_fs_soundmodels) {
         if (sthw_cfg->conf_levels) {
             ALOGV("%s: free hw conf_levels", __func__);
             free(sthw_cfg->conf_levels);
