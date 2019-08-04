@@ -1060,7 +1060,14 @@ void process_raw_lab_data_cpe(st_hw_session_lsm_t *p_lsm_ses)
                     st_sec_stage->ss_session->buf_end = kw_duration_bytes +
                         cnn_append_bytes;
                 }
-                st_sec_stage->ss_session->buff_sz = p_lsm_ses->lab_drv_buf_size;
+                /*
+                 * The first second-stage keyword buffer frame needs to contain
+                 * ((kwd_start_idx - kwd_start_tolerance) - kwd_end_idx) from
+                 * the first stage keyword.
+                 */
+                st_sec_stage->ss_session->buff_sz = (p_lsm_ses->common.kw_end_idx -
+                    st_sec_stage->ss_session->buf_start);
+                st_sec_stage->ss_session->lab_buf_sz = p_lsm_ses->lab_drv_buf_size;
                 st_sec_stage->ss_session->det_status = KEYWORD_DETECTION_PENDING;
             } else if (st_sec_stage->ss_info->sm_detection_type ==
                 ST_SM_TYPE_USER_VERIFICATION) {
@@ -1462,7 +1469,14 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
                     st_sec_stage->ss_session->buf_end = kw_duration_bytes +
                         cnn_append_bytes;
                 }
-                st_sec_stage->ss_session->buff_sz = p_lsm_ses->lab_drv_buf_size;
+                /*
+                 * The first second-stage keyword buffer frame needs to contain
+                 * ((kwd_start_idx - kwd_start_tolerance) - kwd_end_idx) from
+                 * the first stage keyword.
+                 */
+                st_sec_stage->ss_session->buff_sz = (p_lsm_ses->common.kw_end_idx -
+                    st_sec_stage->ss_session->buf_start);
+                st_sec_stage->ss_session->lab_buf_sz = p_lsm_ses->lab_drv_buf_size;
                 st_sec_stage->ss_session->det_status = KEYWORD_DETECTION_PENDING;
             } else if (st_sec_stage->ss_info->sm_detection_type ==
                 ST_SM_TYPE_USER_VERIFICATION) {

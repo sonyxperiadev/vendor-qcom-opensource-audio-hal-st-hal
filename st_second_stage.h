@@ -109,6 +109,7 @@ typedef struct st_arm_ss_session {
     unsigned int unread_bytes;
     bool exit_buffering;
     unsigned int buff_sz;
+    unsigned int lab_buf_sz;
     unsigned int bytes_processed;
     unsigned int buf_start;
     unsigned int buf_end;
