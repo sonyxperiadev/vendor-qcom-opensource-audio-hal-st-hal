@@ -107,8 +107,8 @@ static int process_frame_keyword_detection(st_arm_ss_session_t *ss_session,
             CNN_FRAME_SIZE) + ss_session->buf_start;
         ss_session->kw_end_idx = (result_cfg_ptr->end_position *
             CNN_FRAME_SIZE) + ss_session->buf_start;
-        ss_session->confidence_score = result_cfg_ptr->best_confidence;
     }
+    ss_session->confidence_score = result_cfg_ptr->best_confidence;
 
 exit:
     return ret;
@@ -196,8 +196,10 @@ static int start_keyword_detection(st_arm_second_stage_t *st_sec_stage)
         }
         ss_session->unread_bytes -= ss_session->buff_sz;
 
-        ST_DBG_FILE_WRITE(st_sec_stage->dump_fp, process_input_buff,
-            ss_session->buff_sz);
+        if (st_sec_stage->stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(st_sec_stage->dump_fp, process_input_buff,
+                ss_session->buff_sz);
+        }
         pthread_mutex_unlock(&ss_session->lock);
         ret = process_frame_keyword_detection(ss_session, process_input_buff,
             stream_input, result_cfg_ptr, &det_status);
@@ -306,11 +308,10 @@ static int process_frame_user_verification(st_arm_ss_session_t *ss_session,
         goto exit;
     }
 
-    if (result_cfg_ptr->is_detected) {
+    if (result_cfg_ptr->is_detected)
         *det_status = USER_VERIFICATION_SUCCESS;
-        ss_session->confidence_score =
-            (int32_t)result_cfg_ptr->combined_user_score;
-    }
+    ss_session->confidence_score =
+        (int32_t)result_cfg_ptr->combined_user_score;
 
 exit:
     return ret;
@@ -420,8 +421,10 @@ static int start_user_verification(st_arm_second_stage_t *st_sec_stage)
         }
         ss_session->unread_bytes -= ss_session->buff_sz;
 
-        ST_DBG_FILE_WRITE(st_sec_stage->dump_fp, process_input_buff,
-            ss_session->buff_sz);
+        if (st_sec_stage->stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(st_sec_stage->dump_fp, process_input_buff,
+                ss_session->buff_sz);
+        }
         pthread_mutex_unlock(&ss_session->lock);
         ret = process_frame_user_verification(ss_session, process_input_buff,
             stream_input, result_cfg_ptr, &det_status);
@@ -531,15 +534,23 @@ static void *buffer_thread_loop(void *st_second_stage)
 
         if (st_sec_stage->ss_info->sm_detection_type ==
             ST_SM_TYPE_KEYWORD_DETECTION) {
-            ST_DBG_FILE_OPEN_WR(st_sec_stage->dump_fp, ST_DEBUG_DUMP_LOCATION,
-                "ss_buf_kw_det", "bin", ss_fd_cnt_kw_det++);
+            if (st_sec_stage->stdev->enable_debug_dumps) {
+                ST_DBG_FILE_OPEN_WR(st_sec_stage->dump_fp,
+                    ST_DEBUG_DUMP_LOCATION, "ss_buf_kw_det", "bin",
+                    ss_fd_cnt_kw_det++);
+            }
             start_keyword_detection(st_sec_stage);
-            ST_DBG_FILE_CLOSE(st_sec_stage->dump_fp);
+            if (st_sec_stage->stdev->enable_debug_dumps)
+                ST_DBG_FILE_CLOSE(st_sec_stage->dump_fp);
         } else {
-            ST_DBG_FILE_OPEN_WR(st_sec_stage->dump_fp, ST_DEBUG_DUMP_LOCATION,
-                "ss_buf_user_ver", "bin", ss_fd_cnt_user_ver++);
+            if (st_sec_stage->stdev->enable_debug_dumps) {
+                ST_DBG_FILE_OPEN_WR(st_sec_stage->dump_fp,
+                    ST_DEBUG_DUMP_LOCATION, "ss_buf_user_ver", "bin",
+                    ss_fd_cnt_user_ver++);
+            }
             start_user_verification(st_sec_stage);
-            ST_DBG_FILE_CLOSE(st_sec_stage->dump_fp);
+            if (st_sec_stage->stdev->enable_debug_dumps)
+                ST_DBG_FILE_CLOSE(st_sec_stage->dump_fp);
         }
     }
     pthread_mutex_unlock(&ss_session->lock);

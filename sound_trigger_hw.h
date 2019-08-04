@@ -260,6 +260,7 @@ struct sound_trigger_device {
     bool ssr_offline_received;
     int lpma_handle;
     bool is_charging;
+    bool enable_debug_dumps;
 };
 
 typedef struct sound_trigger_device sound_trigger_device_t;
@@ -272,11 +273,7 @@ st_session_t* get_sound_trigger_session
 
 void update_hw_mad_exec_mode(st_exec_mode_t mode, st_profile_type_t profile_type);
 
-/* Debug helper macros */
-/* #define ST_DEBUG_DUMP */
 #define ST_DEBUG_DUMP_LOCATION "/data/vendor/audio"
-
-#ifdef ST_DEBUG_DUMP
 #define ST_DBG_DECLARE(args...) args
 
 #define ST_DBG_FILE_OPEN_WR(fptr, fpath, fname, fextn, fcount) \
@@ -307,12 +304,6 @@ do {\
         fflush(fptr);\
     }\
 } while (0)
-#else
-#define ST_DBG_DECLARE(args...)
-#define ST_DBG_FILE_OPEN_WR(fptr, path, fname, fextn, fcount) (0)
-#define ST_DBG_FILE_CLOSE(fptr) (0)
-#define ST_DBG_FILE_WRITE(fptr, buf, buf_size) (0)
-#endif
 
 int dbg_trace_max_lab_reads;
 #define ST_DBG_ATRACE_ASYNC_BEGIN_IF(cond, name, cookie)\

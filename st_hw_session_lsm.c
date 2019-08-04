@@ -998,8 +998,10 @@ void process_raw_lab_data_cpe(st_hw_session_lsm_t *p_lsm_ses)
     uint64_t frame_read_time = 0;
 
     ST_DBG_DECLARE(FILE *fptr_drv = NULL; static int file_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(fptr_drv, ST_DEBUG_DUMP_LOCATION,
-                        "st_lab_drv_data_cpe", "pcm", file_cnt++);
+    if (p_lsm_ses->common.stdev->enable_debug_dumps) {
+        ST_DBG_FILE_OPEN_WR(fptr_drv, ST_DEBUG_DUMP_LOCATION,
+                            "st_lab_drv_data_cpe", "pcm", file_cnt++);
+    }
 
     p_lsm_ses->lab_processing_active = true;
     p_lsm_ses->unread_bytes = 0;
@@ -1109,8 +1111,10 @@ void process_raw_lab_data_cpe(st_hw_session_lsm_t *p_lsm_ses)
 
         ALOGVV("%s: pcm_read done", __func__);
 
-        ST_DBG_FILE_WRITE(fptr_drv, p_lsm_ses->lab_drv_buf,
-            p_lsm_ses->lab_drv_buf_size);
+        if (p_lsm_ses->common.stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(fptr_drv, p_lsm_ses->lab_drv_buf,
+                p_lsm_ses->lab_drv_buf_size);
+        }
 
         if (status) {
             ALOGE("%s: pcm read failed status %d - %s", __func__, status,
@@ -1142,7 +1146,8 @@ void process_raw_lab_data_cpe(st_hw_session_lsm_t *p_lsm_ses)
     }
 
     p_lsm_ses->lab_processing_active = false;
-    ST_DBG_FILE_CLOSE(fptr_drv);
+    if (p_lsm_ses->common.stdev->enable_debug_dumps)
+        ST_DBG_FILE_CLOSE(fptr_drv);
     ALOGVV("%s: Exit status=%d", __func__, status);
 }
 
@@ -1164,12 +1169,14 @@ void process_packetized_lab_data(st_hw_session_lsm_t *p_ses)
     unsigned int hdr_size = sizeof(struct cpe_packet_hdr);
     unsigned int hdr_buf_idx = 0;
 
-    ST_DBG_DECLARE(FILE *fptr_drv = NULL, *fptr_pcm = NULL, *fptr_dec = NULL;
-                   static int fcnt = 0, dec_fcnt = 0;);
-    ST_DBG_FILE_OPEN_WR(fptr_drv, ST_DEBUG_DUMP_LOCATION,
-                        "st_lab_drv_data_cpe", "bin", fcnt);
-    ST_DBG_FILE_OPEN_WR(fptr_pcm, ST_DEBUG_DUMP_LOCATION,
-                        "st_lab_output", "pcm", fcnt++);
+    ST_DBG_DECLARE(FILE *fptr_drv = NULL, *fptr_pcm = NULL,
+        *fptr_dec = NULL; static int fcnt = 0, dec_fcnt = 0;);
+    if (p_ses->common.stdev->enable_debug_dumps) {
+        ST_DBG_FILE_OPEN_WR(fptr_drv, ST_DEBUG_DUMP_LOCATION,
+            "st_lab_drv_data_cpe", "bin", fcnt);
+        ST_DBG_FILE_OPEN_WR(fptr_pcm, ST_DEBUG_DUMP_LOCATION,
+            "st_lab_output", "pcm", fcnt++);
+    }
 
     p_ses->lab_processing_active = true;
     p_ses->unread_bytes = 0;
@@ -1197,7 +1204,8 @@ void process_packetized_lab_data(st_hw_session_lsm_t *p_ses)
                                     "sthal:lsm:cpe: lsm_buffer_read", p_ses->common.sm_handle);
         ALOGVV("%s: pcm_read done", __func__);
 
-        ST_DBG_FILE_WRITE(fptr_drv, driver_rd_buf, driver_rd_bytes);
+        if (p_ses->common.stdev->enable_debug_dumps)
+            ST_DBG_FILE_WRITE(fptr_drv, driver_rd_buf, driver_rd_bytes);
 
         if (status) {
             ALOGE("%s: pcm read failed status %d - %s", __func__, status,
@@ -1232,8 +1240,10 @@ void process_packetized_lab_data(st_hw_session_lsm_t *p_ses)
                                __func__, dec_status);
                         goto exit;
                     }
-                    ST_DBG_FILE_OPEN_WR(fptr_dec, ST_DEBUG_DUMP_LOCATION,
-                                        "st_lab_adpcm_input", "bin", dec_fcnt++);
+                    if (p_ses->common.stdev->enable_debug_dumps) {
+                        ST_DBG_FILE_OPEN_WR(fptr_dec, ST_DEBUG_DUMP_LOCATION,
+                                            "st_lab_adpcm_input", "bin", dec_fcnt++);
+                    }
                 }
             }
         }
@@ -1278,8 +1288,8 @@ void process_packetized_lab_data(st_hw_session_lsm_t *p_ses)
                     status = write_pcm_data_cpe(p_ses, &ftrt_buf_ptr[ftrt_buf_idx], copy_bytes);
                     if (status)
                         goto exit;
-
-                    ST_DBG_FILE_WRITE(fptr_pcm, &ftrt_buf_ptr[ftrt_buf_idx], copy_bytes);
+                    if (p_ses->common.stdev->enable_debug_dumps)
+                        ST_DBG_FILE_WRITE(fptr_pcm, &ftrt_buf_ptr[ftrt_buf_idx], copy_bytes);
                     ftrt_buf_idx += copy_bytes;
                     prev_packet->size -= copy_bytes;
                 } else if (prev_packet->format == CPE_PACKET_FORMAT_ADPCM) {
@@ -1308,7 +1318,8 @@ void process_packetized_lab_data(st_hw_session_lsm_t *p_ses)
                         ftrt_buf_idx += dec_bytes;
                         prev_packet->size -= dec_bytes;
 
-                        ST_DBG_FILE_WRITE(fptr_dec, frame_buf_ptr, frame_buf_idx);
+                        if (p_ses->common.stdev->enable_debug_dumps)
+                            ST_DBG_FILE_WRITE(fptr_dec, frame_buf_ptr, frame_buf_idx);
                         if (!prev_packet->size || (frame_buf_idx == ADPCM_MAX_IN_FRAME_SIZE)) {
                             /* if packet size is zero, we may have partial frame to be decoded */
                             ALOGVV("%s: enter for decode- frame_buf_idx=%d ftrt_buf_idx=%d prev_packet->size=%d",
@@ -1329,7 +1340,8 @@ void process_packetized_lab_data(st_hw_session_lsm_t *p_ses)
                             ALOGVV("%s: adpcm_dec_process done. frame_buf_idx=%d out_samples=%d",
                                    __func__, frame_buf_idx, out_samples);
                             if (out_samples) {
-                                ST_DBG_FILE_WRITE(fptr_pcm, dec_out_buf, out_samples << 1);
+                                if (p_ses->common.stdev->enable_debug_dumps)
+                                    ST_DBG_FILE_WRITE(fptr_pcm, dec_out_buf, out_samples << 1);
                                 status = write_pcm_data_cpe(p_ses, dec_out_buf, out_samples << 1);
                                 if (status)
                                     goto exit;
@@ -1363,9 +1375,11 @@ exit:
         p_ses->common.fptrs->stop_buffering(&p_ses->common);
     }
 
-    ST_DBG_FILE_CLOSE(fptr_drv);
-    ST_DBG_FILE_CLOSE(fptr_dec);
-    ST_DBG_FILE_CLOSE(fptr_pcm);
+    if (p_ses->common.stdev->enable_debug_dumps) {
+        ST_DBG_FILE_CLOSE(fptr_drv);
+        ST_DBG_FILE_CLOSE(fptr_dec);
+        ST_DBG_FILE_CLOSE(fptr_pcm);
+    }
 
     ALOGVV("%s: Exit status=%d", __func__, status);
 }
@@ -1382,8 +1396,10 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
     uint64_t frame_read_time = 0, buffering_start_time = 0;
 
     ST_DBG_DECLARE(FILE *fptr_drv = NULL; static int file_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(fptr_drv, ST_DEBUG_DUMP_LOCATION,
-                        "st_lab_drv_data_ape", "pcm", file_cnt++);
+    if (p_lsm_ses->common.stdev->enable_debug_dumps) {
+        ST_DBG_FILE_OPEN_WR(fptr_drv, ST_DEBUG_DUMP_LOCATION,
+                            "st_lab_drv_data_ape", "pcm", file_cnt++);
+    }
 
     pthread_mutex_lock(&p_lsm_ses->lock);
     p_lsm_ses->lab_processing_active = true;
@@ -1471,6 +1487,7 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
             st_sec_stage->ss_session->exit_buffering = false;
             st_sec_stage->ss_session->bytes_processed = 0;
             st_sec_stage->ss_session->start_processing = false;
+            st_sec_stage->ss_session->confidence_score = 0;
             pthread_mutex_unlock(&st_sec_stage->ss_session->lock);
         }
 
@@ -1496,8 +1513,10 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
         frame_receive_time = get_current_time_ns();
 
         ALOGVV("%s: pcm_read done", __func__);
-        ST_DBG_FILE_WRITE(fptr_drv, p_lsm_ses->lab_drv_buf,
-            p_lsm_ses->lab_drv_buf_size);
+        if (p_lsm_ses->common.stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(fptr_drv, p_lsm_ses->lab_drv_buf,
+                p_lsm_ses->lab_drv_buf_size);
+        }
 
         if (status) {
             ALOGE("%s: pcm read failed status %d - %s", __func__, status,
@@ -1534,7 +1553,8 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
     p_lsm_ses->lab_processing_active = false;
     pthread_cond_broadcast(&p_lsm_ses->cond);
     pthread_mutex_unlock(&p_lsm_ses->lock);
-    ST_DBG_FILE_CLOSE(fptr_drv);
+    if (p_lsm_ses->common.stdev->enable_debug_dumps)
+        ST_DBG_FILE_CLOSE(fptr_drv);
     ALOGVV("%s: Exit status=%d", __func__, status);
 }
 
@@ -1658,12 +1678,16 @@ static void *callback_thread_loop(void *context)
         if (p_lsm_ses->common.lab_enabled)
             p_lsm_ses->lab_on_detection = true;
 
-        ST_DBG_DECLARE(FILE *detect_fd = NULL; static int detect_fd_cnt = 0);
-        ST_DBG_FILE_OPEN_WR(detect_fd, ST_DEBUG_DUMP_LOCATION,
-                            "lsm_detection_event", "bin", detect_fd_cnt++);
-        ST_DBG_FILE_WRITE(detect_fd, hw_sess_event.payload.detected.detect_payload,
-                          hw_sess_event.payload.detected.payload_size);
-        ST_DBG_FILE_CLOSE(detect_fd);
+        if (p_lsm_ses->common.stdev->enable_debug_dumps) {
+            ST_DBG_DECLARE(FILE *detect_fd = NULL;
+                static int detect_fd_cnt = 0);
+            ST_DBG_FILE_OPEN_WR(detect_fd, ST_DEBUG_DUMP_LOCATION,
+                "lsm_detection_event", "bin", detect_fd_cnt++);
+            ST_DBG_FILE_WRITE(detect_fd,
+                hw_sess_event.payload.detected.detect_payload,
+                hw_sess_event.payload.detected.payload_size);
+            ST_DBG_FILE_CLOSE(detect_fd);
+        }
 
         pthread_mutex_unlock(&p_lsm_ses->callback_thread_lock);
         p_lsm_ses->common.callback_to_st_session(&hw_sess_event,
@@ -2397,7 +2421,7 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
     unsigned char *lab_dam_payload = NULL;
     struct st_vendor_info *v_info = p_lsm_ses->common.vendor_uuid_info;
     struct snd_lsm_module_params lsm_params;
-    lsm_param_info_t param_info[LSM_SM_PARAMS_INFO_IDX];
+    lsm_param_info_t param_info[LSM_SM_PARAMS_INFO_MAX];
     lsm_param_info_t *cfl_params;
     lsm_param_info_t *op_params;
     lsm_param_info_t *cus_params;
@@ -2679,11 +2703,15 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
         lsm_params.data_size =
              lsm_params.num_params * sizeof(lsm_param_info_t);
 
-        ST_DBG_DECLARE(FILE *lsm_params_fd = NULL; static int lsm_params_cnt = 0);
-        ST_DBG_FILE_OPEN_WR(lsm_params_fd, ST_DEBUG_DUMP_LOCATION,
-                            "lsm_params_data", "bin", lsm_params_cnt++);
-        ST_DBG_FILE_WRITE(lsm_params_fd, lsm_params.params, lsm_params.data_size);
-        ST_DBG_FILE_CLOSE(lsm_params_fd);
+        if (p_lsm_ses->common.stdev->enable_debug_dumps) {
+            ST_DBG_DECLARE(FILE *lsm_params_fd = NULL;
+                static int lsm_params_cnt = 0);
+            ST_DBG_FILE_OPEN_WR(lsm_params_fd, ST_DEBUG_DUMP_LOCATION,
+                "lsm_params_data", "bin", lsm_params_cnt++);
+            ST_DBG_FILE_WRITE(lsm_params_fd, lsm_params.params,
+                lsm_params.data_size);
+            ST_DBG_FILE_CLOSE(lsm_params_fd);
+        }
 
         status = lsm_set_module_params(p_lsm_ses, &lsm_params);
         if (status) {
@@ -2799,11 +2827,15 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
             lsm_params.data_size =
                lsm_params.num_params * sizeof(lsm_param_info_t);
 
-            ST_DBG_DECLARE(FILE *lsm_params_fd = NULL; static int lsm_params_cnt = 0);
-            ST_DBG_FILE_OPEN_WR(lsm_params_fd, ST_DEBUG_DUMP_LOCATION,
-                            "lsm_params_data", "bin", lsm_params_cnt++);
-            ST_DBG_FILE_WRITE(lsm_params_fd, lsm_params.params, lsm_params.data_size);
-            ST_DBG_FILE_CLOSE(lsm_params_fd);
+            if (p_lsm_ses->common.stdev->enable_debug_dumps) {
+                ST_DBG_DECLARE(FILE *lsm_params_fd = NULL;
+                    static int lsm_params_cnt = 0);
+                ST_DBG_FILE_OPEN_WR(lsm_params_fd, ST_DEBUG_DUMP_LOCATION,
+                    "lsm_params_data", "bin", lsm_params_cnt++);
+                ST_DBG_FILE_WRITE(lsm_params_fd, lsm_params.params,
+                    lsm_params.data_size);
+                ST_DBG_FILE_CLOSE(lsm_params_fd);
+            }
 
             status = lsm_set_module_params(p_lsm_ses, &lsm_params);
             if (status) {
@@ -4080,13 +4112,15 @@ static int send_detection_request(st_hw_session_t *p_ses)
     lsm_params.num_params = 1;
     lsm_params.data_size = sizeof(lsm_param_info_t);
 
-    ST_DBG_DECLARE(FILE *req_event_fd = NULL;
-        static int req_event_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(req_event_fd, ST_DEBUG_DUMP_LOCATION,
-                        "requested_event_lsm", "bin", req_event_cnt++);
-    ST_DBG_FILE_WRITE(req_event_fd, param_info.param_data,
-                      param_info.param_size);
-    ST_DBG_FILE_CLOSE(req_event_fd);
+    if (p_ses->stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *req_event_fd = NULL;
+            static int req_event_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(req_event_fd, ST_DEBUG_DUMP_LOCATION,
+            "requested_event_lsm", "bin", req_event_cnt++);
+        ST_DBG_FILE_WRITE(req_event_fd, param_info.param_data,
+            param_info.param_size);
+        ST_DBG_FILE_CLOSE(req_event_fd);
+    }
 
     status = lsm_set_module_params(p_lsm_ses, &lsm_params);
     if (status)
