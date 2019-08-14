@@ -1903,6 +1903,7 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
         status = -ENOMEM;
         goto exit;
     }
+    list_init(&st_session->second_stage_list);
 
     /* CPE takes time to become online, so parse for the pcm devices
        here instead during boot time */
@@ -1943,7 +1944,6 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
      * Parse second stage sound models and populate the second stage list for
      * this session.
      */
-    list_init(&st_session->second_stage_list);
     if (sm_version == SML_MODEL_V3) {
         status = check_and_configure_second_stage_models(st_session, sm_payload,
             num_models, phrase_sm->phrases[0].recognition_mode);
