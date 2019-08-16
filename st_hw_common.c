@@ -202,7 +202,8 @@ bool st_hw_check_lpi_support
         return false;
     }
 
-    if (stdev->rx_concurrency_active || stdev->tx_concurrency_active) {
+    if (stdev->rx_concurrency_active || stdev->conc_voice_active ||
+        stdev->conc_voip_active) {
         ALOGD("%s: lpi NOT supported due to concurrency", __func__);
         return false;
     }
