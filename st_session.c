@@ -3760,6 +3760,7 @@ static void *aggregator_thread_loop(void *st_session)
                     }
                     goto exit;
                 }
+                stc_ses->detection_sent = true;
                 callback = stc_ses->callback;
                 capture_requested = stc_ses->rc_config->capture_requested;
                 cookie = stc_ses->cookie;
@@ -4543,6 +4544,7 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         }
         st_ses->det_stc_ses = stc_ses;
         st_ses->hw_ses_current->enable_second_stage = false; /* Initialize */
+        stc_ses->detection_sent = false;
 
         if (list_empty(&stc_ses->second_stage_list) ||
             st_ses->detection_requested) {
@@ -4635,6 +4637,7 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
          * second stage successfully detects.
          */
         if (!enable_second_stage) {
+            stc_ses->detection_sent = true;
             callback = stc_ses->callback;
             cookie = stc_ses->cookie;
             ALOGD("%s:[c%d] invoking the client callback",
@@ -4681,14 +4684,17 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
                 __func__, st_ses->sm_handle, status);
             if (!status) {
                 /*
-                 * Stop session if still in buffering state and no pending
-                 * stop to be handled i.e. internally buffering was stopped.
-                 * This is required to avoid further detections in wrong state.
-                 * Client is expected to issue start recognition for current
-                 * detection event which will restart the session.
+                 * If detection is sent to client while in buffering state,
+                 * and if internal buffering is stopped due to errors, stop
+                 * session internally as client is expected to restart the
+                 * detection if required.
+                 * Note: It is possible that detection event is not sent to
+                 * client if second stage is not yet detected during internal
+                 * buffering stop, in which case restart is posted from second
+                 * stage thread for further detections.
                  */
                 if ((st_ses->current_state == buffering_state_fn) &&
-                    !stc_ses->pending_stop) {
+                    !stc_ses->pending_stop && stc_ses->detection_sent) {
                     ALOGD("%s:[%d] buffering stopped internally, post c%d stop",
                         __func__, st_ses->sm_handle,
                         st_ses->det_stc_ses->sm_handle);

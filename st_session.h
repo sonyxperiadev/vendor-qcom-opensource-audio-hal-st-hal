@@ -128,6 +128,7 @@ struct st_session {
     bool pending_stop;
     bool pending_load;
     bool pending_set_device;
+    bool detection_sent;
     st_det_perf_mode_t client_req_det_mode;
     unsigned int hist_buf_duration;
     unsigned int preroll_duration;
