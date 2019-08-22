@@ -4192,8 +4192,35 @@ static int loaded_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
 
     case ST_SES_EV_RESUME:
         stc_ses->paused = false;
-        if (!is_any_client_in_state(st_ses, ST_STATE_ACTIVE))
+        if (!is_any_client_in_state(st_ses, ST_STATE_ACTIVE)) {
+            /*
+             * When a transition is needed due to lpi mode or barge-in mode,
+             * call dereg_sm and reg_sm to select the updated lsm_usecase.
+             */
+            if (hw_ses->lpi_enable != hw_ses->stdev->lpi_enable ||
+                (hw_ses->barge_in_mode != hw_ses->stdev->barge_in_mode &&
+                 !hw_ses->stdev->support_dynamic_ec_update)) {
+
+                hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
+                hw_ses->barge_in_mode = hw_ses->stdev->barge_in_mode;
+
+                status = hw_ses->fptrs->dereg_sm(hw_ses);
+                if (status) {
+                    ALOGE("%s:[%d] failed to dereg_sm err %d", __func__,
+                        st_ses->sm_handle, status);
+                    break;
+                }
+
+                status = hw_ses->fptrs->reg_sm(hw_ses, st_ses->sm_info.sm_data,
+                    st_ses->sm_info.sm_size, st_ses->sm_info.sm_type);
+                if (status) {
+                    ALOGE("%s:[%d] failed to reg_sm err %d", __func__,
+                        st_ses->sm_handle, status);
+                    STATE_TRANSITION(st_ses, idle_state_fn);
+                }
+            }
             break;
+        }
         /* Fall through */
     case ST_SES_EV_START:
     case ST_SES_EV_RESTART:
