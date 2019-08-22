@@ -55,8 +55,8 @@ struct sound_trigger_device;
     SOUND_TRIGGER_SAMPLING_RATE_16000, SOUND_TRIGGER_CPE_PERIOD_COUNT, 32)
 
 /*
- * The chosen theshold for determining FTRT vs. RT data is half the buffer
- * duration. There can be frames received that are partially FTRT and
+ * The chosen theshold for determining FTRT vs. RT data is one tenth of the
+ * buffer duration. There can be frames received that are partially FTRT and
  * partially RT, so the threshold should be less than the full buffer duration
  * to account for that usecase. However, if the threshold is too small, then
  * some issue in the lower layers could lead to false identification of RT
@@ -64,7 +64,7 @@ struct sound_trigger_device;
  */
 #define APE_MAX_LAB_FTRT_FRAME_RD_TIME_NS \
     ((SOUND_TRIGGER_APE_BUFFER_DURATION_MS * NSECS_PER_MSEC)\
-    / (2 * SOUND_TRIGGER_APE_PERIOD_COUNT))
+    / (10 * SOUND_TRIGGER_APE_PERIOD_COUNT))
 #define CPE_MAX_LAB_FTRT_FRAME_RD_TIME_NS \
     ((SOUND_TRIGGER_CPE_LAB_DRV_BUF_DURATION_MS * NSECS_PER_MSEC)\
     / (2 * SOUND_TRIGGER_CPE_PERIOD_COUNT))

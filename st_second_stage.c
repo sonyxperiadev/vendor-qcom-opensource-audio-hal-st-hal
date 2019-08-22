@@ -77,7 +77,7 @@ static int process_frame_keyword_detection(st_arm_ss_session_t *ss_session,
     stream_input->buf_ptr->data_ptr = (int8_t *)frame;
 
     ALOGV("%s: Issuing capi_process", __func__);
-    ATRACE_BEGIN("sthal:second_stage: process keyword detection (CNN)");
+    ATRACE_BEGIN("sthal:second_stage: process keyword detection (CNN/RNN)");
     rc = ss_session->capi_handle->vtbl_ptr->process(ss_session->capi_handle,
         &stream_input, NULL);
     ATRACE_END();
@@ -124,8 +124,12 @@ static int start_keyword_detection(st_arm_second_stage_t *st_sec_stage)
     capi_v2_stream_data_t *stream_input = NULL;
     sva_result_t *result_cfg_ptr = NULL;
     unsigned int det_status = KEYWORD_DETECTION_PENDING;
+    uint64_t start_time = 0, end_time = 0;
+    uint32_t bytes_processed_ms = 0;
 
     ALOGV("%s: Enter", __func__);
+
+    start_time = get_current_time_ns();
 
     process_input_buff = calloc(1, ss_session->buff_sz);
     if (!process_input_buff) {
@@ -207,12 +211,17 @@ static int start_keyword_detection(st_arm_second_stage_t *st_sec_stage)
 
 exit:
     /*
-     * The CNN algorithm doesn't set reject because it is continuously called
-     * until the keyword has passed. So if a detection success has not been
-     * declared inside the above loop, it is set to detection reject.
+     * The CNN/RNN algorithm doesn't set reject because it is continuously
+     * called until the keyword has passed. So if a detection success has not
+     * been declared inside the above loop, it is set to detection reject.
      */
     pthread_mutex_unlock(&ss_session->lock);
     pthread_mutex_lock(&ss_session->st_ses->ss_detections_lock);
+    end_time = get_current_time_ns();
+    bytes_processed_ms = convert_bytes_to_ms(ss_session->bytes_processed,
+        &ss_session->st_ses->hw_ses_current->config);
+    ALOGD("%s: Processed %dms of data in %llums", __func__,
+        bytes_processed_ms, (end_time - start_time) / NSECS_PER_MSEC);
     if (det_status == KEYWORD_DETECTION_SUCCESS) {
         uint32_t kw_start_ms = 0, kw_end_ms = 0;
 
@@ -319,8 +328,12 @@ static int start_user_verification(st_arm_second_stage_t *st_sec_stage)
     voiceprint2_result_t *result_cfg_ptr = NULL;
     voiceprint2_sva_uv_score_t *uv_cfg_ptr = NULL;
     unsigned int det_status = USER_VERIFICATION_PENDING;
+    uint64_t start_time = 0, end_time = 0;
+    uint32_t bytes_processed_ms = 0;
 
     ALOGV("%s: Enter", __func__);
+
+    start_time = get_current_time_ns();
 
     process_input_buff = calloc(1, ss_session->buff_sz);
     if (!process_input_buff) {
@@ -417,6 +430,7 @@ static int start_user_verification(st_arm_second_stage_t *st_sec_stage)
             ALOGE("%s: Processing through capi wrapper failed", __func__);
             break;
         }
+        ss_session->bytes_processed += ss_session->buff_sz;
         ss_session->exit_buffering = true;
     }
 
@@ -424,6 +438,11 @@ exit:
 
     pthread_mutex_unlock(&ss_session->lock);
     pthread_mutex_lock(&ss_session->st_ses->ss_detections_lock);
+    end_time = get_current_time_ns();
+    bytes_processed_ms = convert_bytes_to_ms(ss_session->bytes_processed,
+        &ss_session->st_ses->hw_ses_current->config);
+    ALOGD("%s: Processed %dms of data in %llums", __func__,
+        bytes_processed_ms, (end_time - start_time) / NSECS_PER_MSEC);
     if (det_status == USER_VERIFICATION_SUCCESS) {
         ss_session->det_status = USER_VERIFICATION_SUCCESS;
         ALOGD("%s: Detection success, confidence level = %d", __func__,
@@ -559,7 +578,8 @@ int st_second_stage_start_session(st_arm_second_stage_t *st_sec_stage)
         capi_buf.max_data_len = sizeof(sva_threshold_config_t);
         threshold_cfg = (sva_threshold_config_t *)capi_buf.data_ptr;
         threshold_cfg->smm_threshold = ss_session->confidence_threshold;
-        ALOGD("%s: Keyword detection (CNN) confidence level = %d", __func__,
+        ALOGD("%s: Keyword detection %s confidence level = %d", __func__,
+            st_sec_stage->ss_info->sm_id == ST_SM_ID_SVA_CNN ? "(CNN)" : "(RNN)",
             ss_session->confidence_threshold);
 
         ALOGV("%s: Issuing capi_set_param for param %d", __func__,

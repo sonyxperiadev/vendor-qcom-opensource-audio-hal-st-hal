@@ -1377,9 +1377,9 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
     st_arm_second_stage_t *st_sec_stage = NULL;
     unsigned int prepend_bytes = 0, cnn_append_bytes = 0, vop_append_bytes = 0;
     unsigned int kw_duration_bytes = 0;
-    bool real_time_check = false;
+    bool real_time_check = true;
     uint64_t frame_receive_time = 0, frame_send_time = 0;
-    uint64_t frame_read_time = 0;
+    uint64_t frame_read_time = 0, buffering_start_time = 0;
 
     ST_DBG_DECLARE(FILE *fptr_drv = NULL; static int file_cnt = 0);
     ST_DBG_FILE_OPEN_WR(fptr_drv, ST_DEBUG_DUMP_LOCATION,
@@ -1479,22 +1479,20 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
             p_lsm_ses->move_client_ptr = true;
         else
             p_lsm_ses->move_client_ptr = false;
-
-        if (!p_lsm_ses->common.is_generic_event)
-            real_time_check = true;
     }
 
-    ST_DBG_ATRACE_ASYNC_BEGIN_IF(!(dbg_trace_lab_buf_cnt = 0),"sthal:lsm:ape: lsm_buffer_read",
-                                    p_lsm_ses->common.sm_handle);
+    buffering_start_time = get_current_time_ns();
 
     while (!p_lsm_ses->exit_lab_processing) {
         ALOGVV("%s: pcm_read reading bytes=%d", __func__, p_lsm_ses->lab_drv_buf_size);
         pthread_mutex_unlock(&p_lsm_ses->lock);
         frame_send_time = get_current_time_ns();
+        ATRACE_ASYNC_BEGIN("sthal:lsm:ape: pcm_read",
+            p_lsm_ses->common.sm_handle);
         status = pcm_read(p_lsm_ses->pcm, p_lsm_ses->lab_drv_buf, p_lsm_ses->lab_drv_buf_size);
+        ATRACE_ASYNC_END("sthal:lsm:ape: pcm_read",
+            p_lsm_ses->common.sm_handle);
         pthread_mutex_lock(&p_lsm_ses->lock);
-        ST_DBG_ATRACE_ASYNC_END_IF((++dbg_trace_lab_buf_cnt == dbg_trace_max_lab_reads),
-                                    "sthal:lsm:ape: lsm_buffer_read", p_lsm_ses->common.sm_handle);
         frame_receive_time = get_current_time_ns();
 
         ALOGVV("%s: pcm_read done", __func__);
@@ -1513,15 +1511,20 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
         frame_read_time = frame_receive_time - frame_send_time;
         if (real_time_check &&
             (frame_read_time > APE_MAX_LAB_FTRT_FRAME_RD_TIME_NS)) {
-            uint32_t bytes_written_ms =
-                convert_bytes_to_ms(p_lsm_ses->bytes_written,
-                    &p_lsm_ses->common.config);
+            uint32_t ftrt_bytes_written_ms =
+                convert_bytes_to_ms(p_lsm_ses->bytes_written -
+                    p_lsm_ses->lab_drv_buf_size, &p_lsm_ses->common.config);
 
-            ALOGD("%s: Real time frame received after %dms took %llums",
-                __func__, bytes_written_ms,
-                (frame_read_time / NSECS_PER_MSEC));
-            adjust_ss_buff_end(&p_lsm_ses->common, cnn_append_bytes,
-                vop_append_bytes);
+            ALOGD("%s: FTRT data transfer: %dms of data received in %llums",
+                __func__, ftrt_bytes_written_ms, ((frame_send_time -
+                    buffering_start_time) / NSECS_PER_MSEC));
+
+            if (!p_lsm_ses->common.is_generic_event) {
+                ALOGD("%s: First real time frame took %llums", __func__,
+                    (frame_read_time / NSECS_PER_MSEC));
+                adjust_ss_buff_end(&p_lsm_ses->common, cnn_append_bytes,
+                    vop_append_bytes);
+            }
             real_time_check = false;
         }
     }
@@ -2748,8 +2751,8 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
         if (param_tag_tracker & PARAM_OPERATION_MODE_BIT) {
             op_params = &param_info[param_count++];
 
-            /* CNN supports only keyword detection */
-            if (ss_cfg->params->common_params.sm_id == ST_SM_ID_SVA_CNN)
+            /* CNN and RNN only support keyword detection */
+            if (ss_cfg->params->common_params.sm_id & ST_SM_ID_SVA_KWD)
                 det_mode.mode = LSM_MODE_KEYWORD_ONLY_DETECTION;
 
             op_params->param_size = sizeof(det_mode);
@@ -3624,7 +3627,7 @@ static int route_read_pcm_ape(st_hw_session_t *p_ses,
     int status = 0;
     st_hw_session_lsm_t *p_lsm_ses = (st_hw_session_lsm_t *)p_ses;
 
-    ATRACE_BEGIN("sthal:lsm: read_pcm_data");
+    ATRACE_BEGIN("sthal:lsm:client: read_pcm_data");
     status = read_pcm_data(p_lsm_ses, buf, bytes);
     ATRACE_END();
 
