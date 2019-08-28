@@ -402,7 +402,6 @@ struct platform_data {
 
     char backend_port[ST_BACKEND_PORT_NAME_MAX_SIZE];
     st_codec_backend_cfg_t codec_backend_cfg;
-    bool ec_ref_enabled;
     char ec_ref_mixer_path[ST_MAX_LENGTH_MIXER_CONTROL];
     int bad_mic_channel_index;
 
@@ -746,7 +745,6 @@ static void platform_stdev_set_default_config(struct platform_data *platform)
 
     platform->cpe_fe_to_be_fixed = true;
     platform->bad_mic_channel_index = 0;
-    platform->ec_ref_enabled = false;
     platform->be_dai_name_table = NULL;
     platform->max_be_dai_names = 0;
     platform->lpma_cfg.num_bb_ids = 0;
@@ -5472,13 +5470,12 @@ void platform_stdev_send_ec_ref_cfg
 {
     struct platform_data *my_data = (struct platform_data *)platform;
     sound_trigger_device_t *stdev = my_data->stdev;
-    struct sound_trigger_event_info event_info;
+    struct sound_trigger_event_info event_info = {{0}, 0};
 
     if (is_ec_profile(profile_type)) {
         event_info.st_ec_ref_enabled = enable;
         if (enable) {
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);
-            my_data->ec_ref_enabled = enable;
             strlcpy(my_data->ec_ref_mixer_path, "echo-reference",
                     sizeof(my_data->ec_ref_mixer_path));
 
@@ -5493,15 +5490,10 @@ void platform_stdev_send_ec_ref_cfg
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);
             /* avoid disabling echo if audio hal has enabled echo ref */
             if (!stdev->audio_ec_enabled) {
-                if (my_data->ec_ref_enabled) {
-                    ALOGD("%s: reset echo ref %s", __func__,
-                            my_data->ec_ref_mixer_path);
-                    audio_route_reset_and_update_path(stdev->audio_route,
-                            my_data->ec_ref_mixer_path);
-                    my_data->ec_ref_enabled = enable;
-                } else {
-                    ALOGD("%s: EC Reference is already disabled", __func__);
-                }
+                ALOGD("%s: reset echo ref %s", __func__,
+                    my_data->ec_ref_mixer_path);
+                audio_route_reset_and_update_path(stdev->audio_route,
+                        my_data->ec_ref_mixer_path);
             } else {
                 ALOGD("%s: audio hal has already enabled EC", __func__);
             }
