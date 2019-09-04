@@ -3872,6 +3872,11 @@ static int route_enable_device(st_hw_session_t *p_ses, bool setting_device)
 
     ALOGD("%s: Enter", __func__);
 
+    if (!p_lsm_ses->pcm) {
+        ALOGE("%s: pcm NULL", __func__);
+        return -ENODEV;
+    }
+
     capture_device = platform_stdev_get_capture_device(p_ses->stdev->platform);
 
     platform_get_lsm_usecase(p_ses->stdev->platform, v_info,
