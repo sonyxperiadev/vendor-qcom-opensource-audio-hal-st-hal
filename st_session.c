@@ -4714,7 +4714,8 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
          do {
              status = pthread_mutex_trylock(&st_ses->lock);
          } while (status && ((st_ses->current_state == detected_state_fn) ||
-                  (st_ses->current_state == buffering_state_fn)));
+                  (st_ses->current_state == buffering_state_fn)) &&
+                  !st_ses->stdev->ssr_offline_received);
 
         if (st_ses->current_state != detected_state_fn) {
             ALOGV("%s:[%d] client not in detected state, lock status %d",
