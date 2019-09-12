@@ -1552,7 +1552,7 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
                 __func__, ftrt_bytes_written_ms, ((frame_send_time -
                     buffering_start_time) / NSECS_PER_MSEC));
 
-            if (!p_lsm_ses->common.is_generic_event) {
+            if (p_lsm_ses->common.enable_second_stage && !p_lsm_ses->common.is_generic_event) {
                 ALOGD("%s: First real time frame took %llums", __func__,
                     (frame_read_time / NSECS_PER_MSEC));
                 adjust_ss_buff_end(&p_lsm_ses->common, cnn_append_bytes,
