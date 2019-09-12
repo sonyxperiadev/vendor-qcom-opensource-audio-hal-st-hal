@@ -101,6 +101,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_CHANNEL_COUNT "channel_count"
 #define ST_PARAM_KEY_IN_CHANNELS "in_channels"
 #define ST_PARAM_KEY_IN_CHANNELS_LPI "in_channels_lpi"
+#define ST_PARAM_KEY_LPI_MODE "lpi_mode"
 #define ST_PARAM_KEY_OUT_CHANNELS "out_channels"
 #define ST_PARAM_KEY_ADM_CFG_PROFILE "adm_cfg_profile"
 #define ST_PARAM_KEY_CAPTURE_DEVICE "capture_device"
@@ -139,6 +140,8 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_TRANSIT_TO_NON_LPI_ON_BATTERY_CHARGING \
     "transit_to_non_lpi_on_battery_charging"
 #define ST_PARAM_KEY_PLATFORM_LPI_ENABLE "platform_lpi_enable"
+#define ST_PARAM_KEY_SUPPORT_BARGE_IN_MODE \
+    "support_non_lpi_without_ec"
 #define ST_PARAM_KEY_TRANSIT_WAIT_TIME "transit_wait_time"
 #define ST_PARAM_KEY_SPLIT_EC_REF_DATA "split_ec_ref_data"
 #define ST_PARAM_KEY_EC_REF_CHANNEL_COUNT "ec_ref_channel_count"
@@ -150,6 +153,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_VAD_ENABLE "vad_enable"
 #define ST_PARAM_KEY_DEDICATED_SVA_PATH "dedicated_sva_path"
 #define ST_PARAM_KEY_DEDICATED_HEADSET_PATH "dedicated_headset_path"
+#define ST_PARAM_KEY_ENABLE_DEBUG_DUMPS "enable_debug_dumps"
 #define ST_PARAM_KEY_DAM_TOKEN_ID "dam_token_id"
 
 #ifndef Q6AFE_HWDEP_NODE
@@ -398,7 +402,6 @@ struct platform_data {
 
     char backend_port[ST_BACKEND_PORT_NAME_MAX_SIZE];
     st_codec_backend_cfg_t codec_backend_cfg;
-    bool ec_ref_enabled;
     char ec_ref_mixer_path[ST_MAX_LENGTH_MIXER_CONTROL];
     int bad_mic_channel_index;
 
@@ -737,10 +740,11 @@ static void platform_stdev_set_default_config(struct platform_data *platform)
     stdev->dedicated_headset_path = true;
     stdev->disable_hwmad = false;
     stdev->platform_lpi_enable = ST_PLATFORM_LPI_NONE;
+    stdev->screen_off = true;
+    stdev->support_dynamic_ec_update = true;
 
     platform->cpe_fe_to_be_fixed = true;
     platform->bad_mic_channel_index = 0;
-    platform->ec_ref_enabled = false;
     platform->be_dai_name_table = NULL;
     platform->max_be_dai_names = 0;
     platform->lpma_cfg.num_bb_ids = 0;
@@ -1057,6 +1061,14 @@ static int platform_set_common_config
             ST_PLATFORM_LPI_DISABLE;
     }
 
+    err = str_parms_get_str(parms, ST_PARAM_KEY_SUPPORT_BARGE_IN_MODE,
+                            str_value, sizeof(str_value));
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_SUPPORT_BARGE_IN_MODE);
+        stdev->support_barge_in_mode =
+            !strncasecmp(str_value, "true", 4) ? true : false;
+    }
+
     err = str_parms_get_int(parms, ST_PARAM_KEY_TRANSIT_WAIT_TIME, &value);
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_TRANSIT_WAIT_TIME);
@@ -1143,6 +1155,14 @@ static int platform_set_common_config
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_DEDICATED_HEADSET_PATH);
         stdev->dedicated_headset_path =
+            !strncasecmp(str_value, "true", 4) ? true : false;
+    }
+
+    err = str_parms_get_str(parms, ST_PARAM_KEY_ENABLE_DEBUG_DUMPS,
+                            str_value, sizeof(str_value));
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_ENABLE_DEBUG_DUMPS);
+        stdev->enable_debug_dumps =
             !strncasecmp(str_value, "true", 4) ? true : false;
     }
 
@@ -2213,6 +2233,35 @@ static int platform_stdev_set_lsm_params
             ret = string_to_fluence_type(
                 str_value, &(lsm_params->fluence_type));
             if (ret) {
+                goto err_exit;
+            }
+        }
+
+        lsm_params->lpi_enable = ST_PLATFORM_LPI_NONE;
+        err = str_parms_get_str(parms, ST_PARAM_KEY_LPI_MODE,
+                                str_value, sizeof(str_value));
+        if (err >= 0) {
+            str_parms_del(parms, ST_PARAM_KEY_LPI_MODE);
+            /*
+             * The default setting will have 2 lsm_usecases in the xml -
+             * lpi_mode LPI and NON_LPI_BARGE_IN. With this configuration,
+             * dynamic EC updates are supported when barge_in_mode is enabled
+             * or disabled. If a third lsm_usecase is present in the xml with
+             * lpi_mode NON_LPI, then transitions will occur when barge_in_mode
+             * is enabled or disabled. This allows for different number of MICs
+             * between non-LPI with barge-in and non-LPI without barge-in.
+             */
+            if (!strncasecmp(str_value, "NON_LPI",
+                sizeof("NON_LPI"))) {
+                lsm_params->lpi_enable = ST_PLATFORM_LPI_DISABLE;
+                my_data->stdev->support_dynamic_ec_update = false;
+            } else if (!strncasecmp(str_value, "NON_LPI_BARGE_IN",
+                sizeof("NON_LPI_BARGE_IN"))) {
+                lsm_params->lpi_enable = ST_PLATFORM_LPI_DISABLE_AND_BARGE_IN;
+            } else if (!strncasecmp(str_value, "LPI", sizeof("LPI"))) {
+                lsm_params->lpi_enable = ST_PLATFORM_LPI_ENABLE;
+            } else {
+                ALOGE("%s: invalid lpi_mode set: %s", __func__, str_value);
                 goto err_exit;
             }
         }
@@ -3972,27 +4021,27 @@ static int get_st_device
                 channel_count = my_data->codec_backend_cfg.channel_count;
             }
             if (channel_count == SOUND_TRIGGER_CHANNEL_MODE_OCT) {
-                if (my_data->codec_backend_cfg.lpi_enable)
+                if (my_data->stdev->lpi_enable)
                     st_device = ST_DEVICE_HANDSET_8MIC_LPI;
                 else
                     st_device = ST_DEVICE_HANDSET_8MIC;
             } else if (channel_count == SOUND_TRIGGER_CHANNEL_MODE_HEX) {
-                if (my_data->codec_backend_cfg.lpi_enable)
+                if (my_data->stdev->lpi_enable)
                     st_device = ST_DEVICE_HANDSET_6MIC_LPI;
                 else
                     st_device = ST_DEVICE_HANDSET_6MIC;
             } else if (channel_count == SOUND_TRIGGER_CHANNEL_MODE_QUAD) {
-                if (my_data->codec_backend_cfg.lpi_enable)
+                if (my_data->stdev->lpi_enable)
                     st_device = ST_DEVICE_HANDSET_QMIC_LPI;
                 else
                     st_device = ST_DEVICE_HANDSET_QMIC;
             } else if (channel_count == SOUND_TRIGGER_CHANNEL_MODE_TRI) {
-                if (my_data->codec_backend_cfg.lpi_enable)
+                if (my_data->stdev->lpi_enable)
                     st_device = ST_DEVICE_HANDSET_TMIC_LPI;
                 else
                     st_device = ST_DEVICE_HANDSET_TMIC;
             } else if (channel_count == SOUND_TRIGGER_CHANNEL_MODE_STEREO) {
-                if (my_data->codec_backend_cfg.lpi_enable)
+                if (my_data->stdev->lpi_enable)
                     st_device = ST_DEVICE_HANDSET_DMIC_LPI;
                 else
                     st_device = ST_DEVICE_HANDSET_DMIC;
@@ -4973,7 +5022,8 @@ void platform_get_lsm_usecase
    void* platform,
    struct st_vendor_info* v_info,
    struct st_lsm_params** lsm_usecase,
-   st_exec_mode_t exec_mode
+   st_exec_mode_t exec_mode,
+   bool lpi_enable
 )
 {
     struct st_lsm_params *usecase = NULL;
@@ -4981,6 +5031,7 @@ void platform_get_lsm_usecase
     struct platform_data *my_data = (struct platform_data *)platform;
     audio_devices_t capture_device =
         platform_stdev_get_capture_device(platform);
+    sound_trigger_device_t *stdev = my_data->stdev;
 
     ALOGV("%s: Enter", __func__);
 
@@ -4999,7 +5050,32 @@ void platform_get_lsm_usecase
         usecase = node_to_item(lsm_node, struct st_lsm_params, list_node);
         if (usecase->exec_mode == exec_mode) {
             if (my_data->xml_version >= PLATFORM_XML_VERSION_0x0105) {
-                if (capture_device == usecase->capture_device) {
+                /*
+                 * When the capture device matches, the lsm_usecase with the
+                 * following lpi_mode will be selected:
+                 *
+                 * ST_PLATFORM_LPI_NONE, when no lpi_mode is present.
+                 *
+                 * ST_PLATFORM_LPI_ENABLE, when lpi_enable is true.
+                 *
+                 * ST_PLATFORM_LPI_DISABLE_AND_BARGE_IN, when lpi_enable is
+                 * false and either no lsm_usecase with ST_PLATFORM_LPI_DISABLE
+                 * is present or barge_in_mode is active.
+                 *
+                 * ST_PLATFORM_LPI_DISABLE, when lpi_enable is false and an
+                 * lsm_usecase with this lpi_mode is present and barge_in_mode
+                 * is inactive.
+                 */
+                if (capture_device == usecase->capture_device &&
+                    (usecase->lpi_enable == ST_PLATFORM_LPI_NONE ||
+                     (usecase->lpi_enable == ST_PLATFORM_LPI_ENABLE &&
+                      lpi_enable) ||
+                     (usecase->lpi_enable ==
+                      ST_PLATFORM_LPI_DISABLE_AND_BARGE_IN && !lpi_enable &&
+                      (stdev->support_dynamic_ec_update ||
+                       stdev->barge_in_mode)) ||
+                     (usecase->lpi_enable == ST_PLATFORM_LPI_DISABLE &&
+                      !lpi_enable && !stdev->barge_in_mode))) {
                     *lsm_usecase = usecase;
                     v_info->in_channels = usecase->in_channels;
                     v_info->fluence_type = usecase->fluence_type;
@@ -5353,6 +5429,38 @@ static void check_and_append_ec_ref_device_name
         strlcat(ec_ref_mixer_path, " line",  DEVICE_NAME_MAX_SIZE);
 }
 
+int platform_stdev_update_ec_effect
+(
+    void *platform,
+    bool enable_ec
+)
+{
+    struct platform_data *my_data = (struct platform_data *)platform;
+    sound_trigger_device_t *stdev = my_data->stdev;
+    struct mixer_ctl *ctl = NULL;
+    const char *mixer_ctl_name = "FFECNS Effect";
+    int status = 0;
+
+    ALOGD("%s: Turning %s EC effect", __func__, enable_ec ? "on" : "off");
+
+    ctl = mixer_get_ctl_by_name(stdev->mixer, mixer_ctl_name);
+    if (!ctl) {
+        ALOGE("%s: ERROR. Could not get ctl for mixer cmd - %s",
+        __func__, mixer_ctl_name);
+        return -EINVAL;
+    }
+
+    if (enable_ec)
+        status = mixer_ctl_set_enum_by_string(ctl, "ECNS");
+    else
+        status = mixer_ctl_set_enum_by_string(ctl, "NS_ONLY");
+
+    if (status)
+        ALOGE("%s: ERROR. Mixer ctl set failed", __func__);
+
+    return status;
+}
+
 void platform_stdev_send_ec_ref_cfg
 (
    void *platform,
@@ -5362,13 +5470,12 @@ void platform_stdev_send_ec_ref_cfg
 {
     struct platform_data *my_data = (struct platform_data *)platform;
     sound_trigger_device_t *stdev = my_data->stdev;
-    struct sound_trigger_event_info event_info;
+    struct sound_trigger_event_info event_info = {{0}, 0};
 
     if (is_ec_profile(profile_type)) {
         event_info.st_ec_ref_enabled = enable;
         if (enable) {
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);
-            my_data->ec_ref_enabled = enable;
             strlcpy(my_data->ec_ref_mixer_path, "echo-reference",
                     sizeof(my_data->ec_ref_mixer_path));
 
@@ -5383,15 +5490,10 @@ void platform_stdev_send_ec_ref_cfg
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);
             /* avoid disabling echo if audio hal has enabled echo ref */
             if (!stdev->audio_ec_enabled) {
-                if (my_data->ec_ref_enabled) {
-                    ALOGD("%s: reset echo ref %s", __func__,
-                            my_data->ec_ref_mixer_path);
-                    audio_route_reset_and_update_path(stdev->audio_route,
-                            my_data->ec_ref_mixer_path);
-                    my_data->ec_ref_enabled = enable;
-                } else {
-                    ALOGD("%s: EC Reference is already disabled", __func__);
-                }
+                ALOGD("%s: reset echo ref %s", __func__,
+                    my_data->ec_ref_mixer_path);
+                audio_route_reset_and_update_path(stdev->audio_route,
+                        my_data->ec_ref_mixer_path);
             } else {
                 ALOGD("%s: audio hal has already enabled EC", __func__);
             }

@@ -505,17 +505,19 @@ static void *st_ffv_process_thread_loop(void *context)
         return NULL;
     }
 
-    ST_DBG_DECLARE(FILE *fptr_cap = NULL; static int file_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(fptr_cap, ST_DEBUG_DUMP_LOCATION,
-                        "ffv_capture_data", "pcm", file_cnt++);
+    if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *fptr_cap = NULL; static int file_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(fptr_cap, ST_DEBUG_DUMP_LOCATION,
+                            "ffv_capture_data", "pcm", file_cnt++);
 
-    ST_DBG_DECLARE(FILE *fptr_ec = NULL; static int file_cnt_2 = 0);
-    ST_DBG_FILE_OPEN_WR(fptr_ec, ST_DEBUG_DUMP_LOCATION,
-                        "ffv_ec_ref_data", "pcm", file_cnt_2++);
+        ST_DBG_DECLARE(FILE *fptr_ec = NULL; static int file_cnt_2 = 0);
+        ST_DBG_FILE_OPEN_WR(fptr_ec, ST_DEBUG_DUMP_LOCATION,
+                            "ffv_ec_ref_data", "pcm", file_cnt_2++);
 
-    ST_DBG_DECLARE(FILE *fptr_out = NULL; static int file_cnt_3 = 0);
-    ST_DBG_FILE_OPEN_WR(fptr_out, ST_DEBUG_DUMP_LOCATION,
-                        "ffv_out_data", "pcm", file_cnt_3++);
+        ST_DBG_DECLARE(FILE *fptr_out = NULL; static int file_cnt_3 = 0);
+        ST_DBG_FILE_OPEN_WR(fptr_out, ST_DEBUG_DUMP_LOCATION,
+                            "ffv_out_data", "pcm", file_cnt_3++);
+    }
 
     setpriority(PRIO_PROCESS, 0, ANDROID_PRIORITY_AUDIO);
     prctl(PR_SET_NAME, (unsigned long)"sound trigger process", 0, 0, 0);
@@ -539,13 +541,17 @@ static void *st_ffv_process_thread_loop(void *context)
         process_ec_ref_ptr = p_buf->buffer.ec_ref_buf_ptr;
         process_out_ptr = p_buf->buffer.out_buf_ptr;
 
-        ST_DBG_FILE_WRITE(fptr_cap, process_in_ptr, in_buf_size);
-        ST_DBG_FILE_WRITE(fptr_ec, process_ec_ref_ptr,
-                          p_pcm_ses->ec_ref_buf_size);
+        if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(fptr_cap, process_in_ptr, in_buf_size);
+            ST_DBG_FILE_WRITE(fptr_ec, process_ec_ref_ptr,
+                              p_pcm_ses->ec_ref_buf_size);
+        }
         ffv_process_fn(p_pcm_ses->handle, process_in_ptr,
             process_out_ptr, process_ec_ref_ptr);
-        ST_DBG_FILE_WRITE(fptr_out, process_out_ptr,
-                          p_pcm_ses->out_buf_size);
+        if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(fptr_out, process_out_ptr,
+                              p_pcm_ses->out_buf_size);
+        }
         pthread_mutex_lock(&p_pcm_ses->st_ffv_process_lock);
         process_buf_queue_push(&p_pcm_ses->process_buf_free, p_buf);
         pthread_cond_signal(&p_pcm_ses->st_ffv_capture_cond);
@@ -555,9 +561,11 @@ exit:
     p_pcm_ses->st_ffv_process_thread_started = false;
     deinit_process_buffers(p_pcm_ses);
     pthread_mutex_unlock(&p_pcm_ses->st_ffv_process_lock);
-    ST_DBG_FILE_CLOSE(fptr_cap);
-    ST_DBG_FILE_CLOSE(fptr_ec);
-    ST_DBG_FILE_CLOSE(fptr_out);
+    if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+        ST_DBG_FILE_CLOSE(fptr_cap);
+        ST_DBG_FILE_CLOSE(fptr_ec);
+        ST_DBG_FILE_CLOSE(fptr_out);
+    }
     ALOGD("%s: Exit", __func__);
     return NULL;
 }
@@ -614,31 +622,35 @@ static void *capture_thread_loop(void *context)
     int total_in_ch, in_ch, ec_ref_ch;
     unsigned int in_buf_size;
     static bool write_1 = true;
-    ST_DBG_DECLARE(FILE *fptr_cap = NULL; static int file_cnt = 0);
-    ST_DBG_DECLARE(FILE *fptr_ec = NULL; static int file_cnt_2 = 0);
-    ST_DBG_DECLARE(FILE *fptr_split = NULL; static int file_cnt_3 = 0);
-    ST_DBG_DECLARE(FILE *fptr_out = NULL; static int file_cnt_4 = 0);
-    ST_DBG_DECLARE(FILE *fptr_bsp_out = NULL; static int file_cnt_5 = 0);
+    if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *fptr_cap = NULL; static int file_cnt = 0);
+        ST_DBG_DECLARE(FILE *fptr_ec = NULL; static int file_cnt_2 = 0);
+        ST_DBG_DECLARE(FILE *fptr_split = NULL; static int file_cnt_3 = 0);
+        ST_DBG_DECLARE(FILE *fptr_out = NULL; static int file_cnt_4 = 0);
+        ST_DBG_DECLARE(FILE *fptr_bsp_out = NULL; static int file_cnt_5 = 0);
+    }
 
     if (p_pcm_ses == NULL) {
         ALOGE("%s: ERROR: invalid context", __func__);
         goto exit;
     }
 
-    ST_DBG_FILE_OPEN_WR(fptr_cap, ST_DEBUG_DUMP_LOCATION,
-                        "st_capture_data", "pcm", file_cnt++);
+    if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+        ST_DBG_FILE_OPEN_WR(fptr_cap, ST_DEBUG_DUMP_LOCATION,
+                            "st_capture_data", "pcm", file_cnt++);
 
-    ST_DBG_FILE_OPEN_WR(fptr_ec, ST_DEBUG_DUMP_LOCATION,
-                        "st_ec_ref_data", "pcm", file_cnt_2++);
+        ST_DBG_FILE_OPEN_WR(fptr_ec, ST_DEBUG_DUMP_LOCATION,
+                            "st_ec_ref_data", "pcm", file_cnt_2++);
 
-    ST_DBG_FILE_OPEN_WR(fptr_split, ST_DEBUG_DUMP_LOCATION,
-                        "st_split_capture_data", "pcm", file_cnt_3++);
+        ST_DBG_FILE_OPEN_WR(fptr_split, ST_DEBUG_DUMP_LOCATION,
+                            "st_split_capture_data", "pcm", file_cnt_3++);
 
-    ST_DBG_FILE_OPEN_WR(fptr_out, ST_DEBUG_DUMP_LOCATION,
-                        "st_out_data", "pcm", file_cnt_4++);
+        ST_DBG_FILE_OPEN_WR(fptr_out, ST_DEBUG_DUMP_LOCATION,
+                            "st_out_data", "pcm", file_cnt_4++);
 
-    ST_DBG_FILE_OPEN_WR(fptr_bsp_out, ST_DEBUG_DUMP_LOCATION,
-                        "st_bsp_out_data", "pcm", file_cnt_5++);
+        ST_DBG_FILE_OPEN_WR(fptr_bsp_out, ST_DEBUG_DUMP_LOCATION,
+                            "st_bsp_out_data", "pcm", file_cnt_5++);
+    }
 
     st_cpu_affinity_set(p_pcm_ses);
     setpriority(PRIO_PROCESS, 0, ANDROID_PRIORITY_AUDIO);
@@ -653,8 +665,10 @@ static void *capture_thread_loop(void *context)
         status = pcm_read(p_pcm_ses->pcm, p_pcm_ses->in_buf, p_pcm_ses->in_buf_size);
         ALOGVV("%s: pcm_read done", __func__);
 
-        ST_DBG_FILE_WRITE(fptr_cap, p_pcm_ses->in_buf,
-            p_pcm_ses->in_buf_size);
+        if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(fptr_cap, p_pcm_ses->in_buf,
+                p_pcm_ses->in_buf_size);
+        }
 
         if (status) {
             ALOGE("%s: pcm read failed status %d - %s", __func__, status,
@@ -669,8 +683,10 @@ static void *capture_thread_loop(void *context)
             status = pcm_read(p_pcm_ses->ec_ref_pcm, p_pcm_ses->ec_ref_buf, p_pcm_ses->ec_ref_buf_size);
             ALOGVV("%s: pcm_read done", __func__);
 
-            ST_DBG_FILE_WRITE(fptr_ec, p_pcm_ses->ec_ref_buf,
-                              p_pcm_ses->ec_ref_buf_size);
+            if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+                ST_DBG_FILE_WRITE(fptr_ec, p_pcm_ses->ec_ref_buf,
+                                  p_pcm_ses->ec_ref_buf_size);
+            }
 
             if (status) {
                 ALOGE("%s: ec ref pcm read failed status %d - %s", __func__, status,
@@ -699,10 +715,12 @@ static void *capture_thread_loop(void *context)
                               in_ptr[i*total_in_ch+in_ch+ch];
                 }
             }
-            ST_DBG_FILE_WRITE(fptr_split, p_pcm_ses->split_in_buf,
-                              p_pcm_ses->split_in_buf_size);
-            ST_DBG_FILE_WRITE(fptr_ec, p_pcm_ses->ec_ref_buf,
-                              p_pcm_ses->ec_ref_buf_size);
+            if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+                ST_DBG_FILE_WRITE(fptr_split, p_pcm_ses->split_in_buf,
+                                  p_pcm_ses->split_in_buf_size);
+                ST_DBG_FILE_WRITE(fptr_ec, p_pcm_ses->ec_ref_buf,
+                                  p_pcm_ses->ec_ref_buf_size);
+            }
             in_buf_size = p_pcm_ses->split_in_buf_size;
         }
         process_out_ptr = (int16_t *)p_pcm_ses->out_buf;
@@ -736,10 +754,12 @@ static void *capture_thread_loop(void *context)
             write_1 = false;
         }
 
-        ST_DBG_FILE_WRITE(fptr_out, process_out_ptr,
-                          p_pcm_ses->out_buf_size);
-        ST_DBG_FILE_WRITE(fptr_bsp_out, process_bsp_out_ptr,
-                          p_pcm_ses->bsp_out_buf_size);
+        if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(fptr_out, process_out_ptr,
+                              p_pcm_ses->out_buf_size);
+            ST_DBG_FILE_WRITE(fptr_bsp_out, process_bsp_out_ptr,
+                              p_pcm_ses->bsp_out_buf_size);
+        }
 #endif
         pthread_mutex_lock(&p_pcm_ses->capture_thread_lock);
     }
@@ -749,11 +769,13 @@ exit:
     ALOGD("%s: Exit status=%d", __func__, status);
     p_pcm_ses->capture_thread_started = false;
     write_1 = true;
-    ST_DBG_FILE_CLOSE(fptr_cap);
-    ST_DBG_FILE_CLOSE(fptr_ec);
-    ST_DBG_FILE_CLOSE(fptr_split);
-    ST_DBG_FILE_CLOSE(fptr_out);
-    ST_DBG_FILE_CLOSE(fptr_bsp_out);
+    if (p_pcm_ses->common.stdev->enable_debug_dumps) {
+        ST_DBG_FILE_CLOSE(fptr_cap);
+        ST_DBG_FILE_CLOSE(fptr_ec);
+        ST_DBG_FILE_CLOSE(fptr_split);
+        ST_DBG_FILE_CLOSE(fptr_out);
+        ST_DBG_FILE_CLOSE(fptr_bsp_out);
+    }
     return NULL;
 }
 
@@ -1847,9 +1869,11 @@ static void process_lab_capture(st_hw_session_t *p_ses)
     p_pcm_ses->exit_lab_processing = false;
     pthread_mutex_unlock(&p_pcm_ses->lab_out_buf_lock);
 
-    ST_DBG_DECLARE(FILE *fptr_lab = NULL; static int file_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(fptr_lab, ST_DEBUG_DUMP_LOCATION,
-                        "st_lab_capture_data", "pcm", file_cnt++);
+    if (p_ses->stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *fptr_lab = NULL; static int file_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(fptr_lab, ST_DEBUG_DUMP_LOCATION,
+                            "st_lab_capture_data", "pcm", file_cnt++);
+    }
 
     /* Initialize pcm output buffer pointers */
     p_pcm_ses->lab_out_buf_start_ptr = p_pcm_ses->lab_out_buf;
@@ -1869,14 +1893,16 @@ static void process_lab_capture(st_hw_session_t *p_ses)
             p_pcm_ses->common.fptrs->stop_buffering(&p_pcm_ses->common, true);
             break;
         }
-        ST_DBG_FILE_WRITE(fptr_lab, p_pcm_ses->lab_cap_buf, bytes);
+        if (p_ses->stdev->enable_debug_dumps)
+            ST_DBG_FILE_WRITE(fptr_lab, p_pcm_ses->lab_cap_buf, bytes);
 
         status = write_pcm_data(p_pcm_ses, p_pcm_ses->lab_cap_buf, p_pcm_ses->lab_cap_buf_size);
         if (status)
                 break;
     }
 
-    ST_DBG_FILE_CLOSE(fptr_lab);
+    if (p_ses->stdev->enable_debug_dumps)
+        ST_DBG_FILE_CLOSE(fptr_lab);
     ALOGVV("%s: Exit status=%d", __func__, status);
     return;
 }

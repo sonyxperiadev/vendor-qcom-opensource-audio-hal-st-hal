@@ -746,7 +746,7 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
 {
     struct listnode *p_ses_node = NULL;
     st_session_t *p_ses = NULL;
-    bool conc_allowed = false;
+    bool conc_allowed = false, lpi_changed = false, barge_in_mode = false;
     unsigned int num_sessions = 0;
 
     ALOGV_IF(config != NULL, "%s: Enter, event type = %d, audio device = %d",
@@ -836,6 +836,8 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
                 p_ses = node_to_item(p_ses_node, st_session_t, list_node);
                 st_session_pause(p_ses);
             }
+            pthread_mutex_unlock(&stdev->lock);
+            return;
         } else {
             if (event_type == AUDIO_EVENT_CAPTURE_DEVICE_INACTIVE) {
                 list_for_each(p_ses_node, &stdev->sound_model_list) {
@@ -863,25 +865,49 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
      * configuration which will be used during device backend setting as part
      * of session's start/resume.
      */
-    stdev->lpi_enable = st_hw_check_lpi_support(stdev, p_ses);
+    barge_in_mode = stdev->barge_in_mode;
+    st_hw_check_and_update_lpi(stdev, p_ses);
+    lpi_changed = stdev->lpi_enable != platform_get_lpi_mode(stdev->platform);
     stdev->vad_enable = st_hw_check_vad_support(stdev, p_ses, stdev->lpi_enable);
 
-    if (stdev->lpi_enable != platform_get_lpi_mode(stdev->platform) &&
+    /*
+     * Usecase 1: Playback enabled without display on/battery charging:
+     *            lpi_changed = true, so transition occurs.
+     * Usecase 2: Playback enabled with display on/battery charging:
+     *            lpi_changed = false, and barge_in_mode changes from false to
+     *            true. Dynamic EC update or transition will occur depending
+     *            on the flag.
+     * Usecase 3: Playback disabled without display on/battery charging:
+     *            lpi_changed = true, so transition occurs.
+     * Usecase 4: Playback disabled with display on/battery charging:
+     *            lpi_changed = false, and barge_in_mode changes from true to
+     *            false. Dynamic EC update or transition will occur depending
+     *            on the flag.
+     */
+    if ((lpi_changed || barge_in_mode != stdev->barge_in_mode) &&
         !is_any_session_buffering()) {
-        list_for_each(p_ses_node, &stdev->sound_model_list) {
-            p_ses = node_to_item(p_ses_node, st_session_t, list_node);
-            if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
-                ALOGD("%s:[%d] LPI: pause SVA session",
-                    __func__, p_ses->sm_handle);
-                st_session_pause(p_ses);
+        if (!lpi_changed && stdev->support_dynamic_ec_update) {
+            platform_stdev_update_ec_effect(stdev->platform,
+                stdev->barge_in_mode);
+        } else {
+            list_for_each(p_ses_node, &stdev->sound_model_list) {
+                p_ses = node_to_item(p_ses_node, st_session_t, list_node);
+                if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
+                    ALOGD("%s:[%d] LPI: pause SVA session",
+                        __func__, p_ses->sm_handle);
+                    st_session_pause(p_ses);
+                }
             }
-        }
-        list_for_each(p_ses_node, &stdev->sound_model_list) {
-            p_ses = node_to_item(p_ses_node, st_session_t, list_node);
-            if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
-                ALOGD("%s:[%d] LPI: resume SVA session",
-                    __func__, p_ses->sm_handle);
-                st_session_resume(p_ses);
+
+            platform_stdev_reset_backend_cfg(stdev->platform);
+
+            list_for_each(p_ses_node, &stdev->sound_model_list) {
+                p_ses = node_to_item(p_ses_node, st_session_t, list_node);
+                if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
+                    ALOGD("%s:[%d] LPI: resume SVA session",
+                        __func__, p_ses->sm_handle);
+                    st_session_resume(p_ses);
+                }
             }
         }
     }
@@ -1087,6 +1113,50 @@ static void handle_device_switch(bool connect, audio_event_info_t* config)
     ALOGV("%s: Exit", __func__);
 }
 
+static void handle_screen_status_change(audio_event_info_t* config)
+{
+    unsigned int num_sessions = 0;
+    struct listnode *p_ses_node = NULL;
+    st_session_t *p_ses = NULL;
+
+    pthread_mutex_lock(&stdev->lock);
+    stdev->screen_off = config->u.value;
+    ALOGD("%s: screen %s", __func__, stdev->screen_off ? "off" : "on");
+
+    num_sessions = get_num_sessions();
+    if (!num_sessions) {
+        pthread_mutex_unlock(&stdev->lock);
+        return;
+    }
+
+    st_hw_check_and_update_lpi(stdev, p_ses);
+
+    if (stdev->lpi_enable != platform_get_lpi_mode(stdev->platform) &&
+        !is_any_session_buffering()) {
+        list_for_each(p_ses_node, &stdev->sound_model_list) {
+            p_ses = node_to_item(p_ses_node, st_session_t, list_node);
+            if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
+                ALOGD("%s:[%d] LPI: pause SVA session",
+                    __func__, p_ses->sm_handle);
+                st_session_pause(p_ses);
+            }
+        }
+
+        platform_stdev_reset_backend_cfg(stdev->platform);
+
+        list_for_each(p_ses_node, &stdev->sound_model_list) {
+            p_ses = node_to_item(p_ses_node, st_session_t, list_node);
+            if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
+                ALOGD("%s:[%d] LPI: resume SVA session",
+                    __func__, p_ses->sm_handle);
+                st_session_resume(p_ses);
+            }
+        }
+    }
+    pthread_mutex_unlock(&stdev->lock);
+    ALOGV("%s: Exit", __func__);
+}
+
 static void handle_battery_status_change(audio_event_info_t* config)
 {
     unsigned int num_sessions;
@@ -1111,7 +1181,7 @@ static void handle_battery_status_change(audio_event_info_t* config)
      * So check and update the lpi/vad configuration which will be used during
      * device backend setting as part of session's start/resume.
      */
-    stdev->lpi_enable = st_hw_check_lpi_support(stdev, p_ses);
+    st_hw_check_and_update_lpi(stdev, p_ses);
     stdev->vad_enable = st_hw_check_vad_support(stdev, p_ses,
         stdev->lpi_enable);
     if (stdev->lpi_enable != platform_get_lpi_mode(stdev->platform) &&
@@ -1125,6 +1195,9 @@ static void handle_battery_status_change(audio_event_info_t* config)
                 st_session_pause(p_ses);
             }
         }
+
+        platform_stdev_reset_backend_cfg(stdev->platform);
+
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
             if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
@@ -1901,6 +1974,7 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
         status = -ENOMEM;
         goto exit;
     }
+    list_init(&st_session->second_stage_list);
 
     /* CPE takes time to become online, so parse for the pcm devices
        here instead during boot time */
@@ -1941,7 +2015,6 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
      * Parse second stage sound models and populate the second stage list for
      * this session.
      */
-    list_init(&st_session->second_stage_list);
     if (sm_version == SML_MODEL_V3) {
         status = check_and_configure_second_stage_models(st_session, sm_payload,
             num_models, phrase_sm->phrases[0].recognition_mode);
@@ -1998,6 +2071,7 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
     }
 
     st_session->sm_type = sound_model->type;
+    st_hw_check_and_update_lpi(stdev, NULL);
     st_hw_check_and_set_lpi_mode(st_session);
 
     /* CPE DRAM can only be accessed by single client, i.e. Apps or CPE,
@@ -2118,7 +2192,7 @@ static int stdev_reconfig_backend_on_stop(st_session_t *stopped_ses)
     }
 
     struct st_vendor_info *stopped_v_info = stopped_ses->vendor_uuid_info;
-    ALOGD("%s:[%d] v_info %p", __func__, stopped_ses->sm_handle, stopped_v_info);
+    ALOGV("%s:[%d] v_info %p", __func__, stopped_ses->sm_handle, stopped_v_info);
 
     stopped_ses_channel_count =
         platform_stdev_get_backend_channel_count(stdev->platform,
@@ -2144,7 +2218,7 @@ static int stdev_reconfig_backend_on_stop(st_session_t *stopped_ses)
                       (st_session_is_active(ses) == false) &&
                       (st_session_is_buffering(ses) == false);
         if (is_stopped) {
-            ALOGV("%s:[%d]ses is stopped, ignore", __func__, ses->sm_handle);
+            ALOGV("%s:[%d] is stopped, ignore", __func__, ses->sm_handle);
             continue;
         }
 
@@ -2166,7 +2240,7 @@ static int stdev_reconfig_backend_on_stop(st_session_t *stopped_ses)
         }
     }
 
-    stdev->lpi_enable = st_hw_check_lpi_support(stdev, NULL);
+    st_hw_check_and_update_lpi(stdev, NULL);
     stdev->vad_enable = st_hw_check_vad_support(stdev, best_ses,
                                                 stdev->lpi_enable);
 
@@ -2403,7 +2477,7 @@ static int stdev_start_recognition
 
     if (ST_EXEC_MODE_ADSP == st_session->exec_mode ||
         ST_EXEC_MODE_ARM == st_session->exec_mode) {
-        stdev->lpi_enable = st_hw_check_lpi_support(stdev, st_session);
+        st_hw_check_and_update_lpi(stdev, st_session);
         stdev->vad_enable = st_hw_check_vad_support(stdev, st_session,
                                                     stdev->lpi_enable);
         int vad_preroll = st_session_get_preroll(st_session);
@@ -3007,6 +3081,15 @@ int sound_trigger_hw_call_back(audio_event_type_t event,
             break;
         }
         handle_battery_status_change(config);
+        break;
+
+    case AUDIO_EVENT_SCREEN_STATUS_CHANGED:
+        if (!config) {
+            ALOGE("%s: NULL config for AUDIO_EVENT_SCREEN_STATUS_CHANGED", __func__);
+            ret = -EINVAL;
+            break;
+        }
+        handle_screen_status_change(config);
         break;
 
     default:

@@ -39,7 +39,9 @@
 struct sound_trigger_device;
 
 #define SOUND_TRIGGER_MAX_EVNT_PAYLOAD_SIZE (256)
-#define LSM_SM_PARAMS_INFO_IDX (5)
+
+/* Add extra to accomodate multiple LSM_CUSTOM_PARAMS */
+#define LSM_SM_PARAMS_INFO_MAX (LSM_PARAMS_MAX + 4)
 
 #define SOUND_TRIGGER_PCM_MAX_RETRY (10)
 #define SOUND_TRIGGER_PCM_SLEEP_WAIT (1000)

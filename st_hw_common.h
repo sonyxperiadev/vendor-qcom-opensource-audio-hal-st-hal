@@ -35,7 +35,7 @@
 #include "st_session.h"
 
 bool st_hw_check_ses_ss_usecase_allowed(st_session_t *st_ses);
-bool st_hw_check_lpi_support(struct sound_trigger_device *stdev, st_session_t *st_ses);
+void st_hw_check_and_update_lpi(struct sound_trigger_device *stdev, st_session_t *st_ses);
 bool st_hw_check_vad_support(struct sound_trigger_device *stdev, st_session_t *st_ses, bool lpi_enable);
 void st_hw_check_and_set_lpi_mode(st_session_t *st_ses);
 bool st_hw_check_multi_stage_lsm_support();

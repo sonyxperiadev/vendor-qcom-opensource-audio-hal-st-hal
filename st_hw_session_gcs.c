@@ -308,7 +308,8 @@ static int32_t gcs_data_cmdrsp_cb(uint32_t graph_handle,
     buff_sz = hdr->size_in_bytes - sizeof(struct gcs_cmd_readrsp_payload_t);
     buff = (uint8_t *)payload + sizeof(struct gcs_cmd_readrsp_payload_t);
 
-    ST_DBG_FILE_WRITE(p_gcs_ses->lab_fp_gcs, buff, buff_sz);
+    if (p_ses->stdev->enable_debug_dumps)
+        ST_DBG_FILE_WRITE(p_gcs_ses->lab_fp_gcs, buff, buff_sz);
 
     if (buff_sz > ST_GCS_READ_BUF_SIZE) {
         ALOGW("%s: received size %d more than requested %d, truncate",
@@ -434,12 +435,15 @@ static void* callback_thread_loop(void *context)
         p_ses->detection_signaled = false;
         p_det = (struct gcs_det_engine_event *)p_ses->detect_payload;
 
-        ST_DBG_DECLARE(FILE *detect_fd = NULL; static int detect_fd_cnt = 0);
-        ST_DBG_FILE_OPEN_WR(detect_fd, ST_DEBUG_DUMP_LOCATION,
-                            "gcs_detection_event", "bin", detect_fd_cnt++);
-        ST_DBG_FILE_WRITE(detect_fd, p_ses->detect_payload,
-                          p_ses->detect_payload_size);
-        ST_DBG_FILE_CLOSE(detect_fd);
+        if (p_ses->common.stdev->enable_debug_dumps) {
+            ST_DBG_DECLARE(FILE *detect_fd = NULL;
+                static int detect_fd_cnt = 0);
+            ST_DBG_FILE_OPEN_WR(detect_fd, ST_DEBUG_DUMP_LOCATION,
+                                "gcs_detection_event", "bin", detect_fd_cnt++);
+            ST_DBG_FILE_WRITE(detect_fd, p_ses->detect_payload,
+                              p_ses->detect_payload_size);
+            ST_DBG_FILE_CLOSE(detect_fd);
+        }
 
         if (p_ses->start_engine_cal) {
             p_det_ext = (struct gcs_det_engine_extended_event *)p_det;
@@ -597,11 +601,13 @@ static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
     memcpy(load_sm_msg + sizeof(struct graphite_cal_header),
         (uint8_t *)sm_data, sm_size);
 
-
-    ST_DBG_DECLARE(FILE *load_fd = NULL; static int load_fd_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(load_fd, ST_DEBUG_DUMP_LOCATION, "load_sm", "bin", load_fd_cnt++);
-    ST_DBG_FILE_WRITE(load_fd, load_sm_msg, load_sm_msg_sz);
-    ST_DBG_FILE_CLOSE(load_fd);
+    if (p_ses->stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *load_fd = NULL; static int load_fd_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(load_fd, ST_DEBUG_DUMP_LOCATION, "load_sm", "bin",
+            load_fd_cnt++);
+        ST_DBG_FILE_WRITE(load_fd, load_sm_msg, load_sm_msg_sz);
+        ST_DBG_FILE_CLOSE(load_fd);
+    }
 
     ALOGD("%s:[%d] calling gcs_load_data with graph_handle %d, load_sm_msg %p, "
         "load_sm_msg_sz %d", __func__, p_ses->sm_handle, p_gcs_ses->graph_handle,
@@ -1055,12 +1061,15 @@ static int start(st_hw_session_t *p_ses)
     int status = 0;
     st_hw_session_gcs_t *p_gcs_ses = (st_hw_session_gcs_t *)p_ses;
 
-    ST_DBG_DECLARE(FILE *nonpersist_fd = NULL; static int nonpersist_fd_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(nonpersist_fd, ST_DEBUG_DUMP_LOCATION, "nonpersist_params",
-        "bin", nonpersist_fd_cnt++);
-    ST_DBG_FILE_WRITE(nonpersist_fd, p_gcs_ses->nonpersistent_cal,
-        p_gcs_ses->nonpersistent_cal_size);
-    ST_DBG_FILE_CLOSE(nonpersist_fd);
+    if (p_ses->stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *nonpersist_fd = NULL;
+            static int nonpersist_fd_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(nonpersist_fd, ST_DEBUG_DUMP_LOCATION,
+            "nonpersist_params", "bin", nonpersist_fd_cnt++);
+        ST_DBG_FILE_WRITE(nonpersist_fd, p_gcs_ses->nonpersistent_cal,
+            p_gcs_ses->nonpersistent_cal_size);
+        ST_DBG_FILE_CLOSE(nonpersist_fd);
+    }
 
     p_gcs_ses->exit_buffering = false;
     /* During start and stop of VA engines update enable param.
@@ -1476,11 +1485,15 @@ static void process_lab_capture(st_hw_session_t *p_ses)
 
     read_cmd.payload.read.size_in_bytes = ST_GCS_READ_BUF_SIZE;
 
-    ST_DBG_DECLARE(FILE *read_fp = NULL; static int read_fp_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(read_fp, ST_DEBUG_DUMP_LOCATION, "read_msg", "bin", read_fp_cnt++);
-    ST_DBG_FILE_WRITE(read_fp, (char *)&read_cmd, sizeof(struct graphite_data_cmd_hdr) +
-        sizeof(struct gcs_cmd_read_payload_t));
-    ST_DBG_FILE_CLOSE(read_fp);
+    if (p_ses->stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *read_fp = NULL; static int read_fp_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(read_fp, ST_DEBUG_DUMP_LOCATION, "read_msg", "bin",
+            read_fp_cnt++);
+        ST_DBG_FILE_WRITE(read_fp, (char *)&read_cmd,
+            sizeof(struct graphite_data_cmd_hdr) +
+            sizeof(struct gcs_cmd_read_payload_t));
+        ST_DBG_FILE_CLOSE(read_fp);
+    }
 
     ALOGV("%s:[%d] read_cmd module_id 0x%x, instance_id 0x%x, cmd_id 0x%x, "
         "read_sz %d", __func__, p_ses->sm_handle, read_cmd.hdr.module_id,
@@ -1601,10 +1614,12 @@ static void process_lab_capture(st_hw_session_t *p_ses)
         return;
     }
 
-    ST_DBG_FILE_OPEN_WR(p_hw_ses->lab_fp_gcs, ST_DEBUG_DUMP_LOCATION, "lab_gcs_to_sthal",
-        "bin", lab_fp_gcs_cnt++);
-    ST_DBG_FILE_OPEN_WR(p_hw_ses->lab_fp_client, ST_DEBUG_DUMP_LOCATION, "lab_sthal_to_client",
-        "bin", lab_fp_client_cnt++);
+    if (p_ses->stdev->enable_debug_dumps) {
+        ST_DBG_FILE_OPEN_WR(p_hw_ses->lab_fp_gcs, ST_DEBUG_DUMP_LOCATION,
+            "lab_gcs_to_sthal", "bin", lab_fp_gcs_cnt++);
+        ST_DBG_FILE_OPEN_WR(p_hw_ses->lab_fp_client, ST_DEBUG_DUMP_LOCATION,
+            "lab_sthal_to_client", "bin", lab_fp_client_cnt++);
+    }
 
     while (p_hw_ses->read_rsp_cnt && !p_hw_ses->exit_buffering) {
 
@@ -1669,8 +1684,10 @@ static void process_lab_capture(st_hw_session_t *p_ses)
         wdsp_debug_dump(gcs_data.sysfs_fd);
     }
 
-    ST_DBG_FILE_CLOSE(p_hw_ses->lab_fp_gcs);
-    ST_DBG_FILE_CLOSE(p_hw_ses->lab_fp_client);
+    if (p_ses->stdev->enable_debug_dumps) {
+        ST_DBG_FILE_CLOSE(p_hw_ses->lab_fp_gcs);
+        ST_DBG_FILE_CLOSE(p_hw_ses->lab_fp_client);
+    }
 
     /*
      * Signal back to thread calling stop_buffering that
@@ -1749,7 +1766,8 @@ static int read_pcm(st_hw_session_t *p_ses,
 
             p_gcs_ses->unread_bytes -= copy_bytes;
 
-            ST_DBG_FILE_WRITE(p_gcs_ses->lab_fp_client, client_buf, copy_bytes);
+            if (p_ses->stdev->enable_debug_dumps)
+                ST_DBG_FILE_WRITE(p_gcs_ses->lab_fp_client, client_buf, copy_bytes);
 
             bytes -= copy_bytes;
             client_buf += copy_bytes;
@@ -1777,11 +1795,14 @@ static int send_detection_request(st_hw_session_t *p_ses)
         params[REQUEST_DETECTION].param_id;
     cal_hdr.size = 0;
 
-    ST_DBG_DECLARE(FILE *req_event_fd = NULL; static int req_event_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(req_event_fd, ST_DEBUG_DUMP_LOCATION,
-        "requested_event_gcs", "bin", req_event_cnt++);
-    ST_DBG_FILE_WRITE(req_event_fd, &cal_hdr, cal_hdr_size);
-    ST_DBG_FILE_CLOSE(req_event_fd);
+    if (p_ses->stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *req_event_fd = NULL;
+            static int req_event_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(req_event_fd, ST_DEBUG_DUMP_LOCATION,
+            "requested_event_gcs", "bin", req_event_cnt++);
+        ST_DBG_FILE_WRITE(req_event_fd, &cal_hdr, cal_hdr_size);
+        ST_DBG_FILE_CLOSE(req_event_fd);
+    }
 
     ALOGD("%s:[%d] calling gcs_set_config with graph_handle %d, msg_size %d",
         __func__, p_ses->sm_handle, p_gcs_ses->graph_handle, cal_hdr_size);
