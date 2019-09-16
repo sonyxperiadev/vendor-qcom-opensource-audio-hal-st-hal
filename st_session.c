@@ -1116,20 +1116,6 @@ static inline void reset_clients_pending_set_device(st_proxy_session_t *st_ses)
     }
 }
 
-static bool check_and_get_other_active_client(st_proxy_session_t *st_ses,
-    st_session_t *stc_ses)
-{
-    struct listnode *node = NULL;
-    st_session_t *c_ses = NULL;
-
-    list_for_each(node, &st_ses->clients_list) {
-        c_ses = node_to_item(node, st_session_t, hw_list_node);
-        if ((c_ses != stc_ses) && (c_ses->state == ST_STATE_ACTIVE))
-            return c_ses;
-    }
-    return NULL;
-}
-
 static inline bool is_any_client_paused(st_proxy_session_t *st_ses)
 {
     struct listnode *node = NULL;
@@ -4396,10 +4382,20 @@ static int loaded_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
          * have multiple buffering modules with a single voice wakeup
          * module in each usecase.
          */
-        if (!ev->payload.enable)
+        if (!ev->payload.enable) {
             status = hw_ses->fptrs->disable_device(hw_ses, false);
-        else
+        } else {
             status = hw_ses->fptrs->enable_device(hw_ses, false);
+            /*
+             * Device switch might happen during active buffering.
+             * If any client is active, start hw session.
+             */
+            if (is_any_client_in_state(st_ses, ST_STATE_ACTIVE)) {
+                st_session_ev_t start_ev = {.ev_id = ST_SES_EV_START,
+                    .stc_ses = stc_ses};
+                DISPATCH_EVENT(st_ses, start_ev, status);
+            }
+        }
 
         break;
 
@@ -5186,17 +5182,20 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         }
         STATE_TRANSITION(st_ses, loaded_state_fn);
         DISPATCH_EVENT(st_ses, *ev, status);
+
         /*
-         * The current detected client may or may not read buffer/restart
-         * recognition. If no other clients are active, get to loaded state.
-         * Otherwise, if any other client than the detected client is active,
-         * we should move to active state for other client detections.
+         * set_device event can be dispatched with any one of attached
+         * multi-clients. For current detected client, the App may or may
+         * not start next detection, so handle the state accordingly.
          */
-        st_session_ev_t start_ev = {.ev_id = ST_SES_EV_START};
-        if (check_and_get_other_active_client(st_ses, st_ses->det_stc_ses)) {
-            start_ev.stc_ses = stc_ses;
-            DISPATCH_EVENT(st_ses, start_ev, status);
+        if (st_ses->det_stc_ses->pending_stop) {
+            ALOGD("%s:[c%d] cancel ST_SES_EV_DEFERRED_STOP", __func__,
+                st_ses->det_stc_ses->sm_handle);
+            hw_session_notifier_cancel(stc_ses->sm_handle,
+                ST_SES_EV_DEFERRED_STOP);
+            stc_ses->pending_stop = false;
         }
+        st_ses->det_stc_ses->state = ST_STATE_LOADED;
         break;
 
     case ST_SES_EV_START:
