@@ -2444,10 +2444,59 @@ static void dereg_hal_event_session(st_session_t *stc_ses)
     }
 }
 
+static bool check_gcs_usecase_switch
+(
+    st_proxy_session_t *st_ses
+)
+{
+    struct st_vendor_info *v_info = NULL;
+    st_hw_session_t *p_ses = NULL;
+    st_hw_session_gcs_t *p_gcs_ses = NULL;
+    int st_device = 0;
+    unsigned int device_acdb_id = 0;
+    int capture_device;
+
+    if (!st_ses || st_ses->exec_mode != ST_EXEC_MODE_CPE) {
+        ALOGE("%s: Invalid session or non CPE session!", __func__);
+        return false;
+    }
+
+    p_ses = st_ses->hw_ses_cpe;
+    p_gcs_ses = (st_hw_session_gcs_t *)p_ses;
+    v_info = p_ses->vendor_uuid_info;
+
+    if (list_empty(&v_info->gcs_usecase_list)) {
+        ALOGE("%s: gcs usecase not available", __func__);
+        return false;
+    }
+
+    /* check if need to switch gcs usecase for new capture device */
+    capture_device = platform_stdev_get_capture_device(p_ses->stdev->platform);
+    st_device = platform_stdev_get_device(p_ses->stdev->platform,
+        v_info, capture_device, p_ses->exec_mode);
+    device_acdb_id = platform_stdev_get_acdb_id(st_device,
+        p_ses->exec_mode);
+    if (platform_stdev_get_xml_version(p_ses->stdev->platform) >=
+        PLATFORM_XML_VERSION_0x0102) {
+        int i = 0;
+        while ((i < MAX_GCS_USECASE_ACDB_IDS) &&
+                p_gcs_ses->gcs_usecase->acdb_ids[i]) {
+            if (p_gcs_ses->gcs_usecase->acdb_ids[i] == device_acdb_id)
+                return false;
+            i++;
+        }
+        ALOGD("%s: gcs usecase doesn't match for new device", __func__);
+        return true;
+    } else {
+        return false;
+    }
+}
+
 static int start_hw_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses,
     bool load_sm)
 {
     int status = 0, err = 0;
+    bool do_unload = false;
 
     /*
      * It is possible the BE LPI mode has been updated, but not the FE mode.
@@ -2461,6 +2510,17 @@ static int start_hw_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses,
          !hw_ses->stdev->support_dynamic_ec_update)) {
         hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
         hw_ses->barge_in_mode = hw_ses->stdev->barge_in_mode;
+        do_unload = true;
+    }
+
+    /*
+     * For gcs sessions, uid may be changed for new capture device,
+     * in this case, sm must be dereg and reg again.
+     */
+    if (check_gcs_usecase_switch(st_ses))
+        do_unload = true;
+
+    if (do_unload) {
         if (!load_sm) {
             load_sm = true;
             status = hw_ses->fptrs->dereg_sm(hw_ses);
@@ -5712,15 +5772,19 @@ int st_session_resume(st_session_t *stc_ses)
 int st_session_disable_device(st_session_t *stc_ses)
 {
     int status = 0;
+    st_session_event_id_t ev_id = ST_SES_EV_SET_DEVICE;
 
     if (!stc_ses || !stc_ses->hw_proxy_ses)
         return -EINVAL;
 
     st_proxy_session_t *st_ses = stc_ses->hw_proxy_ses;
-    st_session_ev_t ev = {.ev_id = ST_SES_EV_SET_DEVICE,
+    pthread_mutex_lock(&st_ses->lock);
+    if (check_gcs_usecase_switch(stc_ses->hw_proxy_ses))
+        ev_id = ST_SES_EV_PAUSE;
+
+    st_session_ev_t ev = {.ev_id = ev_id,
         .payload.enable = false, .stc_ses = stc_ses};
 
-    pthread_mutex_lock(&st_ses->lock);
     /*
      * Avoid dispatching for each attached multi-client, instead
      * defer it until last client
@@ -5740,15 +5804,19 @@ int st_session_disable_device(st_session_t *stc_ses)
 int st_session_enable_device(st_session_t *stc_ses)
 {
     int status = 0;
+    st_session_event_id_t ev_id = ST_SES_EV_SET_DEVICE;
 
     if (!stc_ses || !stc_ses->hw_proxy_ses)
         return -EINVAL;
 
     st_proxy_session_t *st_ses = stc_ses->hw_proxy_ses;
-    st_session_ev_t ev = { .ev_id = ST_SES_EV_SET_DEVICE,
+    pthread_mutex_lock(&st_ses->lock);
+    if (check_gcs_usecase_switch(stc_ses->hw_proxy_ses))
+        ev_id = ST_SES_EV_RESUME;
+
+    st_session_ev_t ev = { .ev_id = ev_id,
         .payload.enable = true, .stc_ses = stc_ses };
 
-    pthread_mutex_lock(&st_ses->lock);
     /*
      * Avoid dispatching for each attached multi-client, instead
      * defer it until last client
