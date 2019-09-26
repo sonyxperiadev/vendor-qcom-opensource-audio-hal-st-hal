@@ -2646,7 +2646,12 @@ static int restart_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses)
         st_ses->hw_session_started = true;
     } else {
         ALOGE("%s:[%d] failed to restart", __func__, st_ses->sm_handle);
-        st_ses->hw_session_started = false;
+        /*
+         * lower layers like gcs/lsm need to handle double stop calls properly
+         * to avoid possible crash, as some of the clean ups are already issued
+         * during fptrs->restart() when it's failed.
+         */
+        stop_hw_session(st_ses, hw_ses, true);
     }
 
     return status;
