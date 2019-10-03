@@ -3609,12 +3609,14 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
         ret = my_data->audio_hw_acdb_init_v2(stdev->mixer);
         if (ret) {
             ALOGE("%s: ERROR. audio_hw_acdb_init_v2 failed status %d", __func__, ret);
+            my_data->acdb_deinit();
             goto cleanup;
         }
     } else if (my_data->audio_hw_acdb_init) {
             ret = my_data->audio_hw_acdb_init(snd_card_num);
             if (ret) {
                 ALOGE("%s: ERROR. audio_hw_acdb_init failed status %d", __func__, ret);
+                my_data->acdb_deinit();
                 goto cleanup;
             }
     } else {
