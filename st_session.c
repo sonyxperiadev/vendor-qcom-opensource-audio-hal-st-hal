@@ -261,7 +261,6 @@ static inline void alloc_array_ptrs(char ***arr, unsigned int arr_len,
         ALOGV("%s: string array[%d] %p", __func__, i, (*arr)[i]);
 }
 
-
 static int merge_sound_models(struct sound_trigger_device *stdev,
     unsigned int num_models, listen_model_type *in_models[],
     listen_model_type *out_model)
@@ -1218,8 +1217,7 @@ static bool update_hw_config_on_stop(st_proxy_session_t *st_ses,
     int hb_sz = 0, pr_sz = 0;
     bool active = false, enable_lab = false;
 
-    if (!st_ses->vendor_uuid_info->merge_fs_soundmodels ||
-        !st_ses->sm_info.sm_merged) {
+    if (!st_ses->vendor_uuid_info->merge_fs_soundmodels) {
         if (sthw_cfg->conf_levels) {
             ALOGV("%s: free hw conf_levels", __func__);
             free(sthw_cfg->conf_levels);
@@ -2164,14 +2162,16 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
     int status = 0;
     bool enable_lab = false;
 
-
-    ST_DBG_DECLARE(FILE *rc_opaque_fd = NULL; static int rc_opaque_cnt = 0);
-    ST_DBG_FILE_OPEN_WR(rc_opaque_fd, ST_DEBUG_DUMP_LOCATION,
-                        "rc_config_opaque_data", "bin", rc_opaque_cnt++);
-    ST_DBG_FILE_WRITE(rc_opaque_fd,
-                      (uint8_t *)rc_config + rc_config->data_offset,
-                      rc_config->data_size);
-    ST_DBG_FILE_CLOSE(rc_opaque_fd);
+    if (st_ses->stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *rc_opaque_fd = NULL;
+            static int rc_opaque_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(rc_opaque_fd, ST_DEBUG_DUMP_LOCATION,
+            "rc_config_opaque_data", "bin", rc_opaque_cnt++);
+        ST_DBG_FILE_WRITE(rc_opaque_fd,
+            (uint8_t *)rc_config + rc_config->data_offset,
+            rc_config->data_size);
+        ST_DBG_FILE_CLOSE(rc_opaque_fd);
+    }
 
     if (!st_hw_ses) {
         ALOGE("%s: NULL hw session !!!", __func__);
@@ -2356,11 +2356,12 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
          * handle here.
          * For now just copy the the current client data which is same
          * across SVA engines.
+         * Update the custom data for the case in which one client session
+         * does not have custom data and another one does.
          */
-        if (!sthw_cfg->custom_data) {
+        if (rc_config->data_size > sthw_cfg->custom_data_size) {
             sthw_cfg->custom_data = (char *)rc_config + rc_config->data_offset;
-            if (rc_config->data_size)
-                sthw_cfg->custom_data_size =  rc_config->data_size;
+            sthw_cfg->custom_data_size =  rc_config->data_size;
         }
 
     } else {
@@ -2452,10 +2453,14 @@ static int start_hw_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses,
      * It is possible the BE LPI mode has been updated, but not the FE mode.
      * DSP requires both FE and BE to be in the same mode for any configuration
      * changes between LPI and non-LPI switch, so update the FE mode to the
-     * same as BE mode by re-opening LSM session.
+     * same as BE mode by re-opening LSM session. This is also used for
+     * other transition usecases which require dereg_sm and reg_sm.
      */
-    if (hw_ses->lpi_enable != hw_ses->stdev->lpi_enable) {
+    if (hw_ses->lpi_enable != hw_ses->stdev->lpi_enable ||
+        (hw_ses->barge_in_mode != hw_ses->stdev->barge_in_mode &&
+         !hw_ses->stdev->support_dynamic_ec_update)) {
         hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
+        hw_ses->barge_in_mode = hw_ses->stdev->barge_in_mode;
         if (!load_sm) {
             load_sm = true;
             status = hw_ses->fptrs->dereg_sm(hw_ses);
@@ -3214,11 +3219,14 @@ int process_detection_event_keyphrase_v2(
                 goto exit;
             }
 
-            ST_DBG_DECLARE(FILE *opaque_fd = NULL; static int opaque_cnt = 0);
-            ST_DBG_FILE_OPEN_WR(opaque_fd, ST_DEBUG_DUMP_LOCATION,
-                                "detection_opaque_data", "bin", opaque_cnt++);
-            ST_DBG_FILE_WRITE(opaque_fd, opaque_data, opaque_size);
-            ST_DBG_FILE_CLOSE(opaque_fd);
+            if (st_ses->stdev->enable_debug_dumps) {
+                ST_DBG_DECLARE(FILE *opaque_fd = NULL;
+                    static int opaque_cnt = 0);
+                ST_DBG_FILE_OPEN_WR(opaque_fd, ST_DEBUG_DUMP_LOCATION,
+                    "detection_opaque_data", "bin", opaque_cnt++);
+                ST_DBG_FILE_WRITE(opaque_fd, opaque_data, opaque_size);
+                ST_DBG_FILE_CLOSE(opaque_fd);
+            }
         } else {
             status = parse_generic_event_without_opaque_data(st_ses, payload,
                 payload_size, local_event);
@@ -3428,11 +3436,14 @@ static int process_detection_event_keyphrase(
                 st_hw_ses->second_stage_det_event_time;
         opaque_data += sizeof(struct st_timestamp_info);
 
-        ST_DBG_DECLARE(FILE *opaque_fd = NULL; static int opaque_cnt = 0);
-        ST_DBG_FILE_OPEN_WR(opaque_fd, ST_DEBUG_DUMP_LOCATION,
-                            "detection_opaque_data", "bin", opaque_cnt++);
-        ST_DBG_FILE_WRITE(opaque_fd, (opaque_data - opaque_size), opaque_size);
-        ST_DBG_FILE_CLOSE(opaque_fd);
+        if (st_ses->stdev->enable_debug_dumps) {
+            ST_DBG_DECLARE(FILE *opaque_fd = NULL; static int opaque_cnt = 0);
+            ST_DBG_FILE_OPEN_WR(opaque_fd, ST_DEBUG_DUMP_LOCATION,
+                                "detection_opaque_data", "bin", opaque_cnt++);
+            ST_DBG_FILE_WRITE(opaque_fd, (opaque_data - opaque_size),
+                              opaque_size);
+            ST_DBG_FILE_CLOSE(opaque_fd);
+        }
 
     } else {
         if (st_ses->vendor_uuid_info->is_qcva_uuid ||
@@ -3760,6 +3771,7 @@ static void *aggregator_thread_loop(void *st_session)
                     }
                     goto exit;
                 }
+                stc_ses->detection_sent = true;
                 callback = stc_ses->callback;
                 capture_requested = stc_ses->rc_config->capture_requested;
                 cookie = stc_ses->cookie;
@@ -4181,8 +4193,35 @@ static int loaded_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
 
     case ST_SES_EV_RESUME:
         stc_ses->paused = false;
-        if (!is_any_client_in_state(st_ses, ST_STATE_ACTIVE))
+        if (!is_any_client_in_state(st_ses, ST_STATE_ACTIVE)) {
+            /*
+             * When a transition is needed due to lpi mode or barge-in mode,
+             * call dereg_sm and reg_sm to select the updated lsm_usecase.
+             */
+            if (hw_ses->lpi_enable != hw_ses->stdev->lpi_enable ||
+                (hw_ses->barge_in_mode != hw_ses->stdev->barge_in_mode &&
+                 !hw_ses->stdev->support_dynamic_ec_update)) {
+
+                hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
+                hw_ses->barge_in_mode = hw_ses->stdev->barge_in_mode;
+
+                status = hw_ses->fptrs->dereg_sm(hw_ses);
+                if (status) {
+                    ALOGE("%s:[%d] failed to dereg_sm err %d", __func__,
+                        st_ses->sm_handle, status);
+                    break;
+                }
+
+                status = hw_ses->fptrs->reg_sm(hw_ses, st_ses->sm_info.sm_data,
+                    st_ses->sm_info.sm_size, st_ses->sm_info.sm_type);
+                if (status) {
+                    ALOGE("%s:[%d] failed to reg_sm err %d", __func__,
+                        st_ses->sm_handle, status);
+                    STATE_TRANSITION(st_ses, idle_state_fn);
+                }
+            }
             break;
+        }
         /* Fall through */
     case ST_SES_EV_START:
     case ST_SES_EV_RESTART:
@@ -4543,6 +4582,7 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         }
         st_ses->det_stc_ses = stc_ses;
         st_ses->hw_ses_current->enable_second_stage = false; /* Initialize */
+        stc_ses->detection_sent = false;
 
         if (list_empty(&stc_ses->second_stage_list) ||
             st_ses->detection_requested) {
@@ -4599,8 +4639,10 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         if (!status && st_ses->lab_enabled) {
             if (stc_ses->rc_config->capture_requested ||
                 !list_empty(&stc_ses->second_stage_list)) {
-                ST_DBG_FILE_OPEN_WR(st_ses->lab_fp, ST_DEBUG_DUMP_LOCATION,
-                    "lab_capture", "bin", file_cnt++);
+                if (st_ses->stdev->enable_debug_dumps) {
+                    ST_DBG_FILE_OPEN_WR(st_ses->lab_fp, ST_DEBUG_DUMP_LOCATION,
+                        "lab_capture", "bin", file_cnt++);
+                }
                 STATE_TRANSITION(st_ses, buffering_state_fn);
                 lab_enabled = true;
             } else {
@@ -4635,6 +4677,7 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
          * second stage successfully detects.
          */
         if (!enable_second_stage) {
+            stc_ses->detection_sent = true;
             callback = stc_ses->callback;
             cookie = stc_ses->cookie;
             ALOGD("%s:[c%d] invoking the client callback",
@@ -4674,21 +4717,25 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
          do {
              status = pthread_mutex_trylock(&st_ses->lock);
          } while (status && ((st_ses->current_state == detected_state_fn) ||
-                  (st_ses->current_state == buffering_state_fn)));
+                  (st_ses->current_state == buffering_state_fn)) &&
+                  !st_ses->stdev->ssr_offline_received);
 
         if (st_ses->current_state != detected_state_fn) {
             ALOGV("%s:[%d] client not in detected state, lock status %d",
                 __func__, st_ses->sm_handle, status);
             if (!status) {
                 /*
-                 * Stop session if still in buffering state and no pending
-                 * stop to be handled i.e. internally buffering was stopped.
-                 * This is required to avoid further detections in wrong state.
-                 * Client is expected to issue start recognition for current
-                 * detection event which will restart the session.
+                 * If detection is sent to client while in buffering state,
+                 * and if internal buffering is stopped due to errors, stop
+                 * session internally as client is expected to restart the
+                 * detection if required.
+                 * Note: It is possible that detection event is not sent to
+                 * client if second stage is not yet detected during internal
+                 * buffering stop, in which case restart is posted from second
+                 * stage thread for further detections.
                  */
                 if ((st_ses->current_state == buffering_state_fn) &&
-                    !stc_ses->pending_stop) {
+                    !stc_ses->pending_stop && stc_ses->detection_sent) {
                     ALOGD("%s:[%d] buffering stopped internally, post c%d stop",
                         __func__, st_ses->sm_handle,
                         st_ses->det_stc_ses->sm_handle);
@@ -5029,8 +5076,10 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         /* Note: this function may block if there is no PCM data ready*/
         hw_ses->fptrs->read_pcm(hw_ses, ev->payload.readpcm.out_buff,
             ev->payload.readpcm.out_buff_size);
-        ST_DBG_FILE_WRITE(st_ses->lab_fp, ev->payload.readpcm.out_buff,
-            ev->payload.readpcm.out_buff_size);
+        if (st_ses->stdev->enable_debug_dumps) {
+            ST_DBG_FILE_WRITE(st_ses->lab_fp, ev->payload.readpcm.out_buff,
+                ev->payload.readpcm.out_buff_size);
+        }
         break;
     case ST_SES_EV_END_BUFFERING:
         if (stc_ses == st_ses->det_stc_ses) {
@@ -5063,7 +5112,8 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         hw_ses->fptrs->stop_buffering(hw_ses);
         STATE_TRANSITION(st_ses, active_state_fn);
         DISPATCH_EVENT(st_ses, *ev, status);
-        ST_DBG_FILE_CLOSE(st_ses->lab_fp);
+        if (st_ses->stdev->enable_debug_dumps)
+            ST_DBG_FILE_CLOSE(st_ses->lab_fp);
         break;
 
     case ST_SES_EV_SET_DEVICE:
@@ -5637,9 +5687,9 @@ int st_session_pause(st_session_t *stc_ses)
     st_proxy_session_t *st_ses = stc_ses->hw_proxy_ses;
     st_session_ev_t ev = { .ev_id = ST_SES_EV_PAUSE, .stc_ses = stc_ses };
 
-    pthread_mutex_lock(&stc_ses->lock);
+    pthread_mutex_lock(&st_ses->lock);
     DISPATCH_EVENT(st_ses, ev, status);
-    pthread_mutex_unlock(&stc_ses->lock);
+    pthread_mutex_unlock(&st_ses->lock);
     return status;
 }
 
@@ -6249,7 +6299,7 @@ int st_session_init(st_session_t *stc_ses, struct sound_trigger_device *stdev,
     stc_ses->state = ST_STATE_IDLE;
 
     if (st_ses) { /* Could get freed if other client exists */
-        st_ses ->vendor_uuid_info = v_info;
+        st_ses->vendor_uuid_info = v_info;
         st_ses->exec_mode = exec_mode;
         st_ses->sm_handle = sm_handle;
         st_ses->lab_fp = NULL;
