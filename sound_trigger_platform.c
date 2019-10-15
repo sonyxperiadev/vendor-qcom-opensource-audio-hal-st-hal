@@ -5330,7 +5330,7 @@ int platform_stdev_send_stream_app_type_cfg
     bool found_profile = false;
     int st_device_be_idx = -EINVAL;
 
-    if (profile_type == ST_PROFILE_TYPE_NONE) {
+    if (!stdev->lpi_enable && (profile_type == ST_PROFILE_TYPE_NONE)) {
         ALOGV("%s: Profile set to None, ignore sending app type cfg",__func__);
         goto exit;
     }
@@ -5364,16 +5364,31 @@ int platform_stdev_send_stream_app_type_cfg
         goto exit;
     }
 
-    list_for_each_safe(p_node, temp_node, &stdev->adm_cfg_list) {
-        cfg_info = node_to_item(p_node, struct adm_cfg_info, list_node);
-        if (cfg_info->profile_type == profile_type) {
-            found_profile = true;
-            app_type_cfg[len++] = cfg_info->app_type;
-            app_type_cfg[len++] = acdb_id;
-            app_type_cfg[len++] = cfg_info->sample_rate;
-            if (st_device_be_idx >= 0)
-                app_type_cfg[len++] = st_device_be_idx;
-            break;
+    if (stdev->lpi_enable) {
+        /*
+         * Though app_type_cfg is for ADM connection, driver needs atleast LPI
+         * acdb id  to avoid sending a cached non-lpi acdb stale topology of any
+         * concurrent audio use case for SVA LPI use case.
+         */
+        ALOGD("%s: send Stream App Type Cfg for LPI",__func__);
+        found_profile = true;
+        app_type_cfg[len++] = 0;
+        app_type_cfg[len++] = acdb_id;
+        app_type_cfg[len++] = SOUND_TRIGGER_SAMPLING_RATE_16000;
+        if (st_device_be_idx >= 0)
+            app_type_cfg[len++] = st_device_be_idx;
+    } else {
+        list_for_each_safe(p_node, temp_node, &stdev->adm_cfg_list) {
+            cfg_info = node_to_item(p_node, struct adm_cfg_info, list_node);
+            if (cfg_info->profile_type == profile_type) {
+                found_profile = true;
+                app_type_cfg[len++] = cfg_info->app_type;
+                app_type_cfg[len++] = acdb_id;
+                app_type_cfg[len++] = cfg_info->sample_rate;
+                if (st_device_be_idx >= 0)
+                    app_type_cfg[len++] = st_device_be_idx;
+                break;
+            }
         }
     }
 
