@@ -302,6 +302,13 @@ static int merge_sound_models(struct sound_trigger_device *stdev,
         status = -EINVAL;
         goto cleanup;
     }
+    if (stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *sm_fd = NULL; static int sm_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(sm_fd, ST_DEBUG_DUMP_LOCATION,
+            "st_smlib_output_merged_sm", "bin", sm_cnt++);
+        ST_DBG_FILE_WRITE(sm_fd, out_model->data, out_model->size);
+        ST_DBG_FILE_CLOSE(sm_fd);
+    }
     ALOGV("%s: Exit", __func__);
     return 0;
 
@@ -374,6 +381,13 @@ static int delete_from_merged_sound_model(struct sound_trigger_device *stdev,
         /* Used if deleting multiple keyphrases one after other */
         merge_model.data = out_model->data;
         merge_model.size = out_model->size;
+    }
+    if (stdev->enable_debug_dumps && out_model->data && out_model->size) {
+        ST_DBG_DECLARE(FILE *sm_fd = NULL; static int sm_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(sm_fd, ST_DEBUG_DUMP_LOCATION,
+            "st_smlib_output_deleted_sm", "bin", sm_cnt++);
+        ST_DBG_FILE_WRITE(sm_fd, out_model->data, out_model->size);
+        ST_DBG_FILE_CLOSE(sm_fd);
     }
     return 0;
 
@@ -815,6 +829,7 @@ static int delete_sound_model(st_session_t *stc_ses)
             st_ses->sm_info.cf_levels;
         st_ses->hw_ses_current->sthw_cfg.num_conf_levels =
             st_ses->sm_info.cf_levels_size;
+        st_ses->recognition_mode = c_ses_rem->recognition_mode;
         /* Delete current client model */
         release_sound_model_info(&stc_ses->sm_info);
         stc_ses->sm_info.sm_data = NULL;
@@ -824,7 +839,7 @@ static int delete_sound_model(st_session_t *stc_ses)
     list_for_each(node, &st_ses->clients_list) {
         c_ses = node_to_item(node, st_session_t, hw_list_node);
         if ((c_ses != stc_ses) && c_ses->sm_info.sm_data) {
-            if (c_ses->recognition_mode == RECOGNITION_MODE_USER_IDENTIFICATION)
+            if (c_ses->recognition_mode & RECOGNITION_MODE_USER_IDENTIFICATION)
                 rec_mode |=  RECOGNITION_MODE_USER_IDENTIFICATION;
         }
     }

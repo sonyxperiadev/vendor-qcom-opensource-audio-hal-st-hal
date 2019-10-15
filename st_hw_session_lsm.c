@@ -2525,8 +2525,8 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
         ALOGE("%s: Unknown recognition mode %d", __func__, recognition_mode);
         goto error_exit_1;
     }
-    ALOGV("%s: st recogntion_mode %d, dsp det_mode %d", __func__,
-          recognition_mode, det_mode.mode);
+    ALOGD("%s: st_recogntion_mode %d, det_mode %d, lab %d", __func__,
+          recognition_mode, det_mode.mode, capture_requested);
 
     stage_idx = LSM_STAGE_INDEX_FIRST;
     param_count = 0;
