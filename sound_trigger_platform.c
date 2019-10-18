@@ -3980,7 +3980,7 @@ static int get_st_device
     case AUDIO_DEVICE_IN_WIRED_HEADSET:
         if ((ST_EXEC_MODE_CPE == exec_mode) ||
             (ST_EXEC_MODE_ADSP == exec_mode)) {
-            if (my_data->codec_backend_cfg.lpi_enable)
+            if (my_data->stdev->lpi_enable)
                 st_device = ST_DEVICE_HEADSET_MIC_LPI;
             else
                 st_device = ST_DEVICE_HEADSET_MIC;
@@ -4048,10 +4048,10 @@ static int get_st_device
                 else
                     st_device = ST_DEVICE_HANDSET_DMIC;
             } else if (channel_count == SOUND_TRIGGER_CHANNEL_MODE_MONO) {
-                if (v_info->profile_type != ST_PROFILE_TYPE_NONE)
-                    st_device = ST_DEVICE_HANDSET_MIC_PP;
-                else
+                if (my_data->stdev->lpi_enable)
                     st_device = ST_DEVICE_HANDSET_MIC;
+                else
+                    st_device = ST_DEVICE_HANDSET_MIC_PP;
             } else {
                 ALOGE("%s: Invalid channel count %d", __func__, channel_count);
             }
@@ -5732,12 +5732,13 @@ bool platform_stdev_check_backends_match
 
 void platform_stdev_check_and_append_usecase
 (
-   void *platform __unused,
-   char *use_case,
-   st_profile_type_t profile_type
+   void *platform,
+   char *use_case
 )
 {
-    if (profile_type != ST_PROFILE_TYPE_NONE)
+    struct platform_data *my_data = (struct platform_data *)platform;
+
+    if (!my_data->stdev->lpi_enable)
         strlcat(use_case, " preproc", USECASE_STRING_SIZE);
 
     ALOGV("%s: return usecase %s", __func__, use_case);

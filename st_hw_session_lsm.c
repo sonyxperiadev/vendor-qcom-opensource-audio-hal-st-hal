@@ -611,7 +611,7 @@ static void ape_enable_use_case(bool enable, st_hw_session_t *p_ses)
                 p_ses->stdev->ape_pcm_use_cases[p_ses->use_case_idx].use_case,
                 USECASE_STRING_SIZE);
         platform_stdev_check_and_append_usecase(p_ses->stdev->platform,
-                                               use_case, profile_type);
+                                                use_case);
         ALOGD("%s: enable use case = %s", __func__, use_case);
         platform_stdev_send_stream_app_type_cfg(p_ses->stdev->platform,
                                    p_lsm_ses->pcm_id, p_ses->st_device,
@@ -648,7 +648,6 @@ static int ape_enable_port_control(bool enable, st_hw_session_t *p_ses)
 {
     int ret = 0;
     char port_ctrl[USECASE_STRING_SIZE] = {0};
-    st_profile_type_t profile_type = get_profile_type(p_ses);
     st_hw_session_lsm_t *p_lsm_ses = (st_hw_session_lsm_t *)p_ses;
 
     if (enable) {
@@ -656,7 +655,7 @@ static int ape_enable_port_control(bool enable, st_hw_session_t *p_ses)
                 p_ses->stdev->ape_pcm_use_cases[p_ses->use_case_idx].use_case,
                 USECASE_STRING_SIZE);
         platform_stdev_check_and_append_usecase(p_ses->stdev->platform,
-                                                port_ctrl, profile_type);
+                                                port_ctrl);
         strlcat(port_ctrl, " port", USECASE_STRING_SIZE);
 
         ALOGV("%s: enable = %s", __func__, port_ctrl);
