@@ -3029,43 +3029,52 @@ static void query_stdev_platform(sound_trigger_device_t *stdev,
         strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME,
                          sizeof(MIXER_PATH_FILE_NAME));
     }
-    /* check if qrd/cdp specific mixer path file exists */
-    if (strstr(snd_card_name, "qrd")) {
-        char *tmp = NULL;
-        char *snd_internal_name = NULL;
-        char temp_path[MIXER_PATH_MAX_LENGTH];
+    /* create mixer path file name from sound card name
+    and attach cdp/qrd if sound card name has cdp/qrd */
+    char *tmp = NULL;
+    char *snd_internal_name = NULL;
+    char temp_path[MIXER_PATH_MAX_LENGTH];
 
-        strlcpy(temp_path, mixer_path_xml, MIXER_PATH_MAX_LENGTH);
+    strlcpy(temp_path, mixer_path_xml, MIXER_PATH_MAX_LENGTH);
 
-        char *snd_card_name_t = strdup(snd_card_name);
-        if (snd_card_name_t != NULL) {
-            snd_internal_name = strtok_r(snd_card_name_t, "-", &tmp);
-            while (snd_internal_name != NULL) {
-                snd_internal_name = strtok_r(NULL, "-", &tmp);
-                if ((snd_internal_name != NULL) &&
-                    strstr(snd_internal_name, "qrd"))
-                    break;
-            }
-            if (snd_internal_name != NULL) {
-                strlcat(temp_path, "_", MIXER_PATH_MAX_LENGTH);
-                strlcat(temp_path, snd_internal_name, MIXER_PATH_MAX_LENGTH);
-                strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
-                if (access(temp_path, R_OK) == 0) {
-                    strlcat(mixer_path_xml, "_", MIXER_PATH_MAX_LENGTH);
-                    strlcat(mixer_path_xml, snd_internal_name, MIXER_PATH_MAX_LENGTH);
-                }
-            }
-            free(snd_card_name_t);
+    char *snd_card_name_t = strdup(snd_card_name);
+    if (snd_card_name_t != NULL) {
+        snd_internal_name = strtok_r(snd_card_name_t, "-", &tmp);
+        while (snd_internal_name != NULL) {
+           snd_internal_name = strtok_r(NULL, "-", &tmp);
+           if (snd_internal_name != NULL) {
+               strlcat(temp_path, "_", MIXER_PATH_MAX_LENGTH);
+               strlcat(temp_path, snd_internal_name, MIXER_PATH_MAX_LENGTH);
+               strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
+               if (access(temp_path, R_OK) == 0) {
+                   strlcat(mixer_path_xml, "_", MIXER_PATH_MAX_LENGTH);
+                   strlcat(mixer_path_xml, snd_internal_name, MIXER_PATH_MAX_LENGTH);
+                   break;
+               }
+               strlcpy(temp_path, mixer_path_xml, MIXER_PATH_MAX_LENGTH);
+           }
         }
-    } else if (strstr(snd_card_name, "cdp")) {
-        char temp_path[MIXER_PATH_MAX_LENGTH];
-
         strlcpy(temp_path, mixer_path_xml, MIXER_PATH_MAX_LENGTH);
-        strlcat(temp_path, "_cdp", MIXER_PATH_MAX_LENGTH);
-        strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
-        if (access(temp_path, R_OK) == 0)
-            strlcat(mixer_path_xml, "_cdp", MIXER_PATH_MAX_LENGTH);
+        if (strstr(snd_card_name, "qrd")) {
+            strlcat(temp_path, "_qrd", MIXER_PATH_MAX_LENGTH);
+            strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
+            if (access(temp_path, R_OK) == 0)
+                strlcat(mixer_path_xml, "_qrd", MIXER_PATH_MAX_LENGTH);
+        }
+        else if (strstr(snd_card_name, "cdp")) {
+            strlcat(temp_path, "_cdp", MIXER_PATH_MAX_LENGTH);
+            strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
+            if (access(temp_path, R_OK) == 0)
+                strlcat(mixer_path_xml, "_cdp", MIXER_PATH_MAX_LENGTH);
+        }
+        free(snd_card_name_t);
     }
+    if (!strncmp(snd_card_name, "sm6150-wcd9375qrd-snd-card",
+        sizeof("sm6150-wcd9375qrd-snd-card"))) {
+        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME,
+                        sizeof(MIXER_PATH_FILE_NAME));
+    }
+
     strlcat(mixer_path_xml, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
 
     /* Default sw_mad value will be overwritten if it
