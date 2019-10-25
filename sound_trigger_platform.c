@@ -3306,7 +3306,7 @@ static int platform_stdev_get_device_sample_rate
     struct listnode *p_node, *temp_node;
     struct adm_cfg_info *cfg_info;;
     /* default device sampling rate in acdb */
-    int sample_rate = SOUND_TRIGGER_SAMPLING_RATE_48000;
+    int sample_rate = SOUND_TRIGGER_SAMPLING_RATE_16000;
 
     list_for_each_safe(p_node, temp_node, &stdev->adm_cfg_list) {
         cfg_info = node_to_item(p_node, struct adm_cfg_info, list_node);
