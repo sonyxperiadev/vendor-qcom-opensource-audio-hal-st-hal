@@ -3972,6 +3972,7 @@ static int handle_load_sm(st_proxy_session_t *st_ses, st_session_t *stc_ses)
         if (status)
             ALOGE("%s:[%d] stop_session failed %d", __func__, st_ses->sm_handle,
                   status);
+        STATE_TRANSITION(st_ses, loaded_state_fn);
     }
 
     status = hw_ses->fptrs->dereg_sm(hw_ses);
@@ -4060,6 +4061,7 @@ static int handle_unload_sm(st_proxy_session_t *st_ses, st_session_t *stc_ses)
         if (status)
             ALOGE("%s:[%d] stop_session failed %d", __func__,
                 st_ses->sm_handle, status);
+        STATE_TRANSITION(st_ses, loaded_state_fn);
     }
 
     status = hw_ses->fptrs->dereg_sm(hw_ses);
