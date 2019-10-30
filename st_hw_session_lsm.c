@@ -611,7 +611,7 @@ static void ape_enable_use_case(bool enable, st_hw_session_t *p_ses)
                 p_ses->stdev->ape_pcm_use_cases[p_ses->use_case_idx].use_case,
                 USECASE_STRING_SIZE);
         platform_stdev_check_and_append_usecase(p_ses->stdev->platform,
-                                               use_case, profile_type);
+                                                use_case);
         ALOGD("%s: enable use case = %s", __func__, use_case);
         platform_stdev_send_stream_app_type_cfg(p_ses->stdev->platform,
                                    p_lsm_ses->pcm_id, p_ses->st_device,
@@ -648,7 +648,6 @@ static int ape_enable_port_control(bool enable, st_hw_session_t *p_ses)
 {
     int ret = 0;
     char port_ctrl[USECASE_STRING_SIZE] = {0};
-    st_profile_type_t profile_type = get_profile_type(p_ses);
     st_hw_session_lsm_t *p_lsm_ses = (st_hw_session_lsm_t *)p_ses;
 
     if (enable) {
@@ -656,7 +655,7 @@ static int ape_enable_port_control(bool enable, st_hw_session_t *p_ses)
                 p_ses->stdev->ape_pcm_use_cases[p_ses->use_case_idx].use_case,
                 USECASE_STRING_SIZE);
         platform_stdev_check_and_append_usecase(p_ses->stdev->platform,
-                                                port_ctrl, profile_type);
+                                                port_ctrl);
         strlcat(port_ctrl, " port", USECASE_STRING_SIZE);
 
         ALOGV("%s: enable = %s", __func__, port_ctrl);
@@ -1552,7 +1551,7 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
                 __func__, ftrt_bytes_written_ms, ((frame_send_time -
                     buffering_start_time) / NSECS_PER_MSEC));
 
-            if (!p_lsm_ses->common.is_generic_event) {
+            if (p_lsm_ses->common.enable_second_stage && !p_lsm_ses->common.is_generic_event) {
                 ALOGD("%s: First real time frame took %llums", __func__,
                     (frame_read_time / NSECS_PER_MSEC));
                 adjust_ss_buff_end(&p_lsm_ses->common, cnn_append_bytes,
@@ -2525,8 +2524,8 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
         ALOGE("%s: Unknown recognition mode %d", __func__, recognition_mode);
         goto error_exit_1;
     }
-    ALOGV("%s: st recogntion_mode %d, dsp det_mode %d", __func__,
-          recognition_mode, det_mode.mode);
+    ALOGD("%s: st_recogntion_mode %d, det_mode %d, lab %d", __func__,
+          recognition_mode, det_mode.mode, capture_requested);
 
     stage_idx = LSM_STAGE_INDEX_FIRST;
     param_count = 0;

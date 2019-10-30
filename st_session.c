@@ -302,6 +302,13 @@ static int merge_sound_models(struct sound_trigger_device *stdev,
         status = -EINVAL;
         goto cleanup;
     }
+    if (stdev->enable_debug_dumps) {
+        ST_DBG_DECLARE(FILE *sm_fd = NULL; static int sm_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(sm_fd, ST_DEBUG_DUMP_LOCATION,
+            "st_smlib_output_merged_sm", "bin", sm_cnt++);
+        ST_DBG_FILE_WRITE(sm_fd, out_model->data, out_model->size);
+        ST_DBG_FILE_CLOSE(sm_fd);
+    }
     ALOGV("%s: Exit", __func__);
     return 0;
 
@@ -374,6 +381,13 @@ static int delete_from_merged_sound_model(struct sound_trigger_device *stdev,
         /* Used if deleting multiple keyphrases one after other */
         merge_model.data = out_model->data;
         merge_model.size = out_model->size;
+    }
+    if (stdev->enable_debug_dumps && out_model->data && out_model->size) {
+        ST_DBG_DECLARE(FILE *sm_fd = NULL; static int sm_cnt = 0);
+        ST_DBG_FILE_OPEN_WR(sm_fd, ST_DEBUG_DUMP_LOCATION,
+            "st_smlib_output_deleted_sm", "bin", sm_cnt++);
+        ST_DBG_FILE_WRITE(sm_fd, out_model->data, out_model->size);
+        ST_DBG_FILE_CLOSE(sm_fd);
     }
     return 0;
 
@@ -815,6 +829,7 @@ static int delete_sound_model(st_session_t *stc_ses)
             st_ses->sm_info.cf_levels;
         st_ses->hw_ses_current->sthw_cfg.num_conf_levels =
             st_ses->sm_info.cf_levels_size;
+        st_ses->recognition_mode = c_ses_rem->recognition_mode;
         /* Delete current client model */
         release_sound_model_info(&stc_ses->sm_info);
         stc_ses->sm_info.sm_data = NULL;
@@ -824,7 +839,7 @@ static int delete_sound_model(st_session_t *stc_ses)
     list_for_each(node, &st_ses->clients_list) {
         c_ses = node_to_item(node, st_session_t, hw_list_node);
         if ((c_ses != stc_ses) && c_ses->sm_info.sm_data) {
-            if (c_ses->recognition_mode == RECOGNITION_MODE_USER_IDENTIFICATION)
+            if (c_ses->recognition_mode & RECOGNITION_MODE_USER_IDENTIFICATION)
                 rec_mode |=  RECOGNITION_MODE_USER_IDENTIFICATION;
         }
     }
@@ -1114,20 +1129,6 @@ static inline void reset_clients_pending_set_device(st_proxy_session_t *st_ses)
         c_ses = node_to_item(node, st_session_t, hw_list_node);
         c_ses->pending_set_device = false;
     }
-}
-
-static bool check_and_get_other_active_client(st_proxy_session_t *st_ses,
-    st_session_t *stc_ses)
-{
-    struct listnode *node = NULL;
-    st_session_t *c_ses = NULL;
-
-    list_for_each(node, &st_ses->clients_list) {
-        c_ses = node_to_item(node, st_session_t, hw_list_node);
-        if ((c_ses != stc_ses) && (c_ses->state == ST_STATE_ACTIVE))
-            return c_ses;
-    }
-    return NULL;
 }
 
 static inline bool is_any_client_paused(st_proxy_session_t *st_ses)
@@ -2444,10 +2445,59 @@ static void dereg_hal_event_session(st_session_t *stc_ses)
     }
 }
 
+static bool check_gcs_usecase_switch
+(
+    st_proxy_session_t *st_ses
+)
+{
+    struct st_vendor_info *v_info = NULL;
+    st_hw_session_t *p_ses = NULL;
+    st_hw_session_gcs_t *p_gcs_ses = NULL;
+    int st_device = 0;
+    unsigned int device_acdb_id = 0;
+    int capture_device;
+
+    if (!st_ses || st_ses->exec_mode != ST_EXEC_MODE_CPE) {
+        ALOGE("%s: Invalid session or non CPE session!", __func__);
+        return false;
+    }
+
+    p_ses = st_ses->hw_ses_cpe;
+    p_gcs_ses = (st_hw_session_gcs_t *)p_ses;
+    v_info = p_ses->vendor_uuid_info;
+
+    if (list_empty(&v_info->gcs_usecase_list)) {
+        ALOGE("%s: gcs usecase not available", __func__);
+        return false;
+    }
+
+    /* check if need to switch gcs usecase for new capture device */
+    capture_device = platform_stdev_get_capture_device(p_ses->stdev->platform);
+    st_device = platform_stdev_get_device(p_ses->stdev->platform,
+        v_info, capture_device, p_ses->exec_mode);
+    device_acdb_id = platform_stdev_get_acdb_id(st_device,
+        p_ses->exec_mode);
+    if (platform_stdev_get_xml_version(p_ses->stdev->platform) >=
+        PLATFORM_XML_VERSION_0x0102) {
+        int i = 0;
+        while ((i < MAX_GCS_USECASE_ACDB_IDS) &&
+                p_gcs_ses->gcs_usecase->acdb_ids[i]) {
+            if (p_gcs_ses->gcs_usecase->acdb_ids[i] == device_acdb_id)
+                return false;
+            i++;
+        }
+        ALOGD("%s: gcs usecase doesn't match for new device", __func__);
+        return true;
+    } else {
+        return false;
+    }
+}
+
 static int start_hw_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses,
     bool load_sm)
 {
     int status = 0, err = 0;
+    bool do_unload = false;
 
     /*
      * It is possible the BE LPI mode has been updated, but not the FE mode.
@@ -2461,6 +2511,17 @@ static int start_hw_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses,
          !hw_ses->stdev->support_dynamic_ec_update)) {
         hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
         hw_ses->barge_in_mode = hw_ses->stdev->barge_in_mode;
+        do_unload = true;
+    }
+
+    /*
+     * For gcs sessions, uid may be changed for new capture device,
+     * in this case, sm must be dereg and reg again.
+     */
+    if (check_gcs_usecase_switch(st_ses))
+        do_unload = true;
+
+    if (do_unload) {
         if (!load_sm) {
             load_sm = true;
             status = hw_ses->fptrs->dereg_sm(hw_ses);
@@ -3911,6 +3972,7 @@ static int handle_load_sm(st_proxy_session_t *st_ses, st_session_t *stc_ses)
         if (status)
             ALOGE("%s:[%d] stop_session failed %d", __func__, st_ses->sm_handle,
                   status);
+        STATE_TRANSITION(st_ses, loaded_state_fn);
     }
 
     status = hw_ses->fptrs->dereg_sm(hw_ses);
@@ -3999,6 +4061,7 @@ static int handle_unload_sm(st_proxy_session_t *st_ses, st_session_t *stc_ses)
         if (status)
             ALOGE("%s:[%d] stop_session failed %d", __func__,
                 st_ses->sm_handle, status);
+        STATE_TRANSITION(st_ses, loaded_state_fn);
     }
 
     status = hw_ses->fptrs->dereg_sm(hw_ses);
@@ -4337,10 +4400,20 @@ static int loaded_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
          * have multiple buffering modules with a single voice wakeup
          * module in each usecase.
          */
-        if (!ev->payload.enable)
+        if (!ev->payload.enable) {
             status = hw_ses->fptrs->disable_device(hw_ses, false);
-        else
+        } else {
             status = hw_ses->fptrs->enable_device(hw_ses, false);
+            /*
+             * Device switch might happen during active buffering.
+             * If any client is active, start hw session.
+             */
+            if (is_any_client_in_state(st_ses, ST_STATE_ACTIVE)) {
+                st_session_ev_t start_ev = {.ev_id = ST_SES_EV_START,
+                    .stc_ses = stc_ses};
+                DISPATCH_EVENT(st_ses, start_ev, status);
+            }
+        }
 
         break;
 
@@ -5133,17 +5206,20 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         }
         STATE_TRANSITION(st_ses, loaded_state_fn);
         DISPATCH_EVENT(st_ses, *ev, status);
+
         /*
-         * The current detected client may or may not read buffer/restart
-         * recognition. If no other clients are active, get to loaded state.
-         * Otherwise, if any other client than the detected client is active,
-         * we should move to active state for other client detections.
+         * set_device event can be dispatched with any one of attached
+         * multi-clients. For current detected client, the App may or may
+         * not start next detection, so handle the state accordingly.
          */
-        st_session_ev_t start_ev = {.ev_id = ST_SES_EV_START};
-        if (check_and_get_other_active_client(st_ses, st_ses->det_stc_ses)) {
-            start_ev.stc_ses = stc_ses;
-            DISPATCH_EVENT(st_ses, start_ev, status);
+        if (st_ses->det_stc_ses->pending_stop) {
+            ALOGD("%s:[c%d] cancel ST_SES_EV_DEFERRED_STOP", __func__,
+                st_ses->det_stc_ses->sm_handle);
+            hw_session_notifier_cancel(stc_ses->sm_handle,
+                ST_SES_EV_DEFERRED_STOP);
+            stc_ses->pending_stop = false;
         }
+        st_ses->det_stc_ses->state = ST_STATE_LOADED;
         break;
 
     case ST_SES_EV_START:
@@ -5712,15 +5788,19 @@ int st_session_resume(st_session_t *stc_ses)
 int st_session_disable_device(st_session_t *stc_ses)
 {
     int status = 0;
+    st_session_event_id_t ev_id = ST_SES_EV_SET_DEVICE;
 
     if (!stc_ses || !stc_ses->hw_proxy_ses)
         return -EINVAL;
 
     st_proxy_session_t *st_ses = stc_ses->hw_proxy_ses;
-    st_session_ev_t ev = {.ev_id = ST_SES_EV_SET_DEVICE,
+    pthread_mutex_lock(&st_ses->lock);
+    if (check_gcs_usecase_switch(stc_ses->hw_proxy_ses))
+        ev_id = ST_SES_EV_PAUSE;
+
+    st_session_ev_t ev = {.ev_id = ev_id,
         .payload.enable = false, .stc_ses = stc_ses};
 
-    pthread_mutex_lock(&st_ses->lock);
     /*
      * Avoid dispatching for each attached multi-client, instead
      * defer it until last client
@@ -5740,15 +5820,19 @@ int st_session_disable_device(st_session_t *stc_ses)
 int st_session_enable_device(st_session_t *stc_ses)
 {
     int status = 0;
+    st_session_event_id_t ev_id = ST_SES_EV_SET_DEVICE;
 
     if (!stc_ses || !stc_ses->hw_proxy_ses)
         return -EINVAL;
 
     st_proxy_session_t *st_ses = stc_ses->hw_proxy_ses;
-    st_session_ev_t ev = { .ev_id = ST_SES_EV_SET_DEVICE,
+    pthread_mutex_lock(&st_ses->lock);
+    if (check_gcs_usecase_switch(stc_ses->hw_proxy_ses))
+        ev_id = ST_SES_EV_RESUME;
+
+    st_session_ev_t ev = { .ev_id = ev_id,
         .payload.enable = true, .stc_ses = stc_ses };
 
-    pthread_mutex_lock(&st_ses->lock);
     /*
      * Avoid dispatching for each attached multi-client, instead
      * defer it until last client
