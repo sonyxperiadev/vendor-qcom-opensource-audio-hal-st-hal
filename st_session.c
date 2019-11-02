@@ -3947,6 +3947,7 @@ static void destroy_det_event_aggregator(st_proxy_session_t *st_ses)
 static int handle_load_sm(st_proxy_session_t *st_ses, st_session_t *stc_ses)
 {
     st_hw_session_t *hw_ses = st_ses->hw_ses_current;
+    st_proxy_session_state_fn_t curr_state = st_ses->current_state;
     int status = 0;
 
     ALOGV("%s:[c%d-%d]", __func__, stc_ses->sm_handle, st_ses->sm_handle);
@@ -4007,9 +4008,9 @@ static int handle_load_sm(st_proxy_session_t *st_ses, st_session_t *stc_ses)
         goto exit_1;
     }
 
-    if (st_ses->current_state == active_state_fn ||
-        st_ses->current_state == detected_state_fn ||
-        st_ses->current_state == buffering_state_fn) {
+    if (curr_state == active_state_fn ||
+        curr_state == detected_state_fn ||
+        curr_state == buffering_state_fn) {
 
         status = start_session(st_ses, hw_ses, false);
         if (status)
@@ -4041,6 +4042,7 @@ exit:
 static int handle_unload_sm(st_proxy_session_t *st_ses, st_session_t *stc_ses)
 {
     st_hw_session_t *hw_ses = st_ses->hw_ses_current;
+    st_proxy_session_state_fn_t curr_state = st_ses->current_state;
     int status = 0;
 
     ALOGV("%s:[c%d-%d]", __func__, stc_ses->sm_handle, st_ses->sm_handle);
@@ -4092,9 +4094,9 @@ static int handle_unload_sm(st_proxy_session_t *st_ses, st_session_t *stc_ses)
         goto exit;
     }
 
-    if (st_ses->current_state == active_state_fn ||
-        st_ses->current_state == detected_state_fn ||
-        st_ses->current_state == buffering_state_fn) {
+    if (curr_state == active_state_fn ||
+        curr_state == detected_state_fn ||
+        curr_state == buffering_state_fn) {
 
         status = start_session(st_ses, hw_ses, false);
         if (status)
