@@ -3618,12 +3618,14 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
         ret = my_data->audio_hw_acdb_init_v2(stdev->mixer);
         if (ret) {
             ALOGE("%s: ERROR. audio_hw_acdb_init_v2 failed status %d", __func__, ret);
+            my_data->acdb_deinit();
             goto cleanup;
         }
     } else if (my_data->audio_hw_acdb_init) {
             ret = my_data->audio_hw_acdb_init(snd_card_num);
             if (ret) {
                 ALOGE("%s: ERROR. audio_hw_acdb_init failed status %d", __func__, ret);
+                my_data->acdb_deinit();
                 goto cleanup;
             }
     } else {
@@ -3987,7 +3989,7 @@ static int get_st_device
     case AUDIO_DEVICE_IN_WIRED_HEADSET:
         if ((ST_EXEC_MODE_CPE == exec_mode) ||
             (ST_EXEC_MODE_ADSP == exec_mode)) {
-            if (my_data->codec_backend_cfg.lpi_enable)
+            if (my_data->stdev->lpi_enable)
                 st_device = ST_DEVICE_HEADSET_MIC_LPI;
             else
                 st_device = ST_DEVICE_HEADSET_MIC;
@@ -4055,10 +4057,10 @@ static int get_st_device
                 else
                     st_device = ST_DEVICE_HANDSET_DMIC;
             } else if (channel_count == SOUND_TRIGGER_CHANNEL_MODE_MONO) {
-                if (v_info->profile_type != ST_PROFILE_TYPE_NONE)
-                    st_device = ST_DEVICE_HANDSET_MIC_PP;
-                else
+                if (my_data->stdev->lpi_enable)
                     st_device = ST_DEVICE_HANDSET_MIC;
+                else
+                    st_device = ST_DEVICE_HANDSET_MIC_PP;
             } else {
                 ALOGE("%s: Invalid channel count %d", __func__, channel_count);
             }
@@ -5339,7 +5341,7 @@ int platform_stdev_send_stream_app_type_cfg
     bool found_profile = false;
     int st_device_be_idx = -EINVAL;
 
-    if (profile_type == ST_PROFILE_TYPE_NONE) {
+    if (!stdev->lpi_enable && (profile_type == ST_PROFILE_TYPE_NONE)) {
         ALOGV("%s: Profile set to None, ignore sending app type cfg",__func__);
         goto exit;
     }
@@ -5373,16 +5375,31 @@ int platform_stdev_send_stream_app_type_cfg
         goto exit;
     }
 
-    list_for_each_safe(p_node, temp_node, &stdev->adm_cfg_list) {
-        cfg_info = node_to_item(p_node, struct adm_cfg_info, list_node);
-        if (cfg_info->profile_type == profile_type) {
-            found_profile = true;
-            app_type_cfg[len++] = cfg_info->app_type;
-            app_type_cfg[len++] = acdb_id;
-            app_type_cfg[len++] = cfg_info->sample_rate;
-            if (st_device_be_idx >= 0)
-                app_type_cfg[len++] = st_device_be_idx;
-            break;
+    if (stdev->lpi_enable) {
+        /*
+         * Though app_type_cfg is for ADM connection, driver needs atleast LPI
+         * acdb id  to avoid sending a cached non-lpi acdb stale topology of any
+         * concurrent audio use case for SVA LPI use case.
+         */
+        ALOGD("%s: send Stream App Type Cfg for LPI",__func__);
+        found_profile = true;
+        app_type_cfg[len++] = 0;
+        app_type_cfg[len++] = acdb_id;
+        app_type_cfg[len++] = SOUND_TRIGGER_SAMPLING_RATE_16000;
+        if (st_device_be_idx >= 0)
+            app_type_cfg[len++] = st_device_be_idx;
+    } else {
+        list_for_each_safe(p_node, temp_node, &stdev->adm_cfg_list) {
+            cfg_info = node_to_item(p_node, struct adm_cfg_info, list_node);
+            if (cfg_info->profile_type == profile_type) {
+                found_profile = true;
+                app_type_cfg[len++] = cfg_info->app_type;
+                app_type_cfg[len++] = acdb_id;
+                app_type_cfg[len++] = cfg_info->sample_rate;
+                if (st_device_be_idx >= 0)
+                    app_type_cfg[len++] = st_device_be_idx;
+                break;
+            }
         }
     }
 
@@ -5739,12 +5756,13 @@ bool platform_stdev_check_backends_match
 
 void platform_stdev_check_and_append_usecase
 (
-   void *platform __unused,
-   char *use_case,
-   st_profile_type_t profile_type
+   void *platform,
+   char *use_case
 )
 {
-    if (profile_type != ST_PROFILE_TYPE_NONE)
+    struct platform_data *my_data = (struct platform_data *)platform;
+
+    if (!my_data->stdev->lpi_enable)
         strlcat(use_case, " preproc", USECASE_STRING_SIZE);
 
     ALOGV("%s: return usecase %s", __func__, use_case);
