@@ -669,6 +669,8 @@ void platform_stdev_check_and_update_ec_ref_config
 
 bool platform_get_lpi_mode(void *my_data);
 
+int platform_get_lpi_st_device(int st_device);
+
 void platform_stdev_reset_backend_cfg(void *platform);
 
 void platform_stdev_get_lpma_config
