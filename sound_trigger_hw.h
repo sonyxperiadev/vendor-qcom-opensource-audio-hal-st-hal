@@ -178,6 +178,7 @@ struct sound_trigger_device {
     pthread_mutex_t ref_cnt_lock;
     int *dev_ref_cnt;
     struct listnode available_devices;
+    int *dev_enable_cnt;
     pthread_t transitions_thread;
     pthread_cond_t transitions_cond;
 

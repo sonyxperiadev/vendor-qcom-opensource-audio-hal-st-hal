@@ -4386,6 +4386,30 @@ bool platform_get_lpi_mode(void *platform)
     return my_data->codec_backend_cfg.lpi_enable;
 }
 
+int platform_get_lpi_st_device(int st_device)
+{
+    int lpi_device = st_device;
+
+    switch (st_device) {
+    case ST_DEVICE_HANDSET_DMIC:
+        lpi_device = ST_DEVICE_HANDSET_DMIC_LPI;
+        break;
+    case ST_DEVICE_HANDSET_TMIC:
+        lpi_device = ST_DEVICE_HANDSET_TMIC_LPI;
+        break;
+    case ST_DEVICE_HANDSET_QMIC:
+        lpi_device = ST_DEVICE_HANDSET_QMIC_LPI;
+        break;
+    case ST_DEVICE_HEADSET_MIC:
+        lpi_device = ST_DEVICE_HEADSET_MIC_LPI;
+        break;
+    default:
+        ALOGV("%s: No need to convert device %d", __func__, st_device);
+    }
+
+    return lpi_device;
+}
+
 #ifdef SNDRV_IOCTL_HWDEP_VAD_CAL_TYPE
 static int platform_stdev_send_hwvad_cal
 (
