@@ -2783,7 +2783,7 @@ static int get_first_stage_detection_params(st_proxy_session_t *st_ses,
     return 0;
 }
 
-static inline int prepapre_second_stage_for_client(st_session_t *stc_ses)
+static inline int prepare_second_stage_for_client(st_session_t *stc_ses)
 {
     struct listnode *node = NULL;
     st_arm_second_stage_t *st_sec_stage = NULL;
@@ -5455,7 +5455,6 @@ static int ssr_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
                 status = -EINVAL;
                 break;
             }
-            prepapre_second_stage_for_client(stc_ses);
             stc_ses->state = ST_STATE_LOADED;
         } else {
             ALOGE("%s: received unexpected event, client state = %d",
@@ -5469,7 +5468,6 @@ static int ssr_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
             if (status)
                 ALOGE("%s:[c%d] update sound_model failed %d", __func__,
                     stc_ses->sm_handle, status);
-            stop_second_stage_for_client(stc_ses);
             stc_ses->state = ST_STATE_IDLE;
         } else {
             ALOGE("%s: received unexpected event, client state = %d",
@@ -5562,7 +5560,7 @@ int st_session_load_sm(st_session_t *stc_ses)
     pthread_mutex_lock(&st_ses->lock);
     DISPATCH_EVENT(st_ses, ev, status);
     if (!status) {
-        prepapre_second_stage_for_client(stc_ses);
+        prepare_second_stage_for_client(stc_ses);
         stc_ses->state = ST_STATE_LOADED;
     }
     pthread_mutex_unlock(&st_ses->lock);
