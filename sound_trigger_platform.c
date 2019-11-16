@@ -3029,43 +3029,52 @@ static void query_stdev_platform(sound_trigger_device_t *stdev,
         strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME,
                          sizeof(MIXER_PATH_FILE_NAME));
     }
-    /* check if qrd/cdp specific mixer path file exists */
-    if (strstr(snd_card_name, "qrd")) {
-        char *tmp = NULL;
-        char *snd_internal_name = NULL;
-        char temp_path[MIXER_PATH_MAX_LENGTH];
+    /* create mixer path file name from sound card name
+    and attach cdp/qrd if sound card name has cdp/qrd */
+    char *tmp = NULL;
+    char *snd_internal_name = NULL;
+    char temp_path[MIXER_PATH_MAX_LENGTH];
 
-        strlcpy(temp_path, mixer_path_xml, MIXER_PATH_MAX_LENGTH);
+    strlcpy(temp_path, mixer_path_xml, MIXER_PATH_MAX_LENGTH);
 
-        char *snd_card_name_t = strdup(snd_card_name);
-        if (snd_card_name_t != NULL) {
-            snd_internal_name = strtok_r(snd_card_name_t, "-", &tmp);
-            while (snd_internal_name != NULL) {
-                snd_internal_name = strtok_r(NULL, "-", &tmp);
-                if ((snd_internal_name != NULL) &&
-                    strstr(snd_internal_name, "qrd"))
-                    break;
-            }
-            if (snd_internal_name != NULL) {
-                strlcat(temp_path, "_", MIXER_PATH_MAX_LENGTH);
-                strlcat(temp_path, snd_internal_name, MIXER_PATH_MAX_LENGTH);
-                strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
-                if (access(temp_path, R_OK) == 0) {
-                    strlcat(mixer_path_xml, "_", MIXER_PATH_MAX_LENGTH);
-                    strlcat(mixer_path_xml, snd_internal_name, MIXER_PATH_MAX_LENGTH);
-                }
-            }
-            free(snd_card_name_t);
+    char *snd_card_name_t = strdup(snd_card_name);
+    if (snd_card_name_t != NULL) {
+        snd_internal_name = strtok_r(snd_card_name_t, "-", &tmp);
+        while (snd_internal_name != NULL) {
+           snd_internal_name = strtok_r(NULL, "-", &tmp);
+           if (snd_internal_name != NULL) {
+               strlcat(temp_path, "_", MIXER_PATH_MAX_LENGTH);
+               strlcat(temp_path, snd_internal_name, MIXER_PATH_MAX_LENGTH);
+               strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
+               if (access(temp_path, R_OK) == 0) {
+                   strlcat(mixer_path_xml, "_", MIXER_PATH_MAX_LENGTH);
+                   strlcat(mixer_path_xml, snd_internal_name, MIXER_PATH_MAX_LENGTH);
+                   break;
+               }
+               strlcpy(temp_path, mixer_path_xml, MIXER_PATH_MAX_LENGTH);
+           }
         }
-    } else if (strstr(snd_card_name, "cdp")) {
-        char temp_path[MIXER_PATH_MAX_LENGTH];
-
         strlcpy(temp_path, mixer_path_xml, MIXER_PATH_MAX_LENGTH);
-        strlcat(temp_path, "_cdp", MIXER_PATH_MAX_LENGTH);
-        strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
-        if (access(temp_path, R_OK) == 0)
-            strlcat(mixer_path_xml, "_cdp", MIXER_PATH_MAX_LENGTH);
+        if (strstr(snd_card_name, "qrd")) {
+            strlcat(temp_path, "_qrd", MIXER_PATH_MAX_LENGTH);
+            strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
+            if (access(temp_path, R_OK) == 0)
+                strlcat(mixer_path_xml, "_qrd", MIXER_PATH_MAX_LENGTH);
+        }
+        else if (strstr(snd_card_name, "cdp")) {
+            strlcat(temp_path, "_cdp", MIXER_PATH_MAX_LENGTH);
+            strlcat(temp_path, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
+            if (access(temp_path, R_OK) == 0)
+                strlcat(mixer_path_xml, "_cdp", MIXER_PATH_MAX_LENGTH);
+        }
+        free(snd_card_name_t);
     }
+    if (!strncmp(snd_card_name, "sm6150-wcd9375qrd-snd-card",
+        sizeof("sm6150-wcd9375qrd-snd-card"))) {
+        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME,
+                        sizeof(MIXER_PATH_FILE_NAME));
+    }
+
     strlcat(mixer_path_xml, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
 
     /* Default sw_mad value will be overwritten if it
@@ -3609,12 +3618,14 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
         ret = my_data->audio_hw_acdb_init_v2(stdev->mixer);
         if (ret) {
             ALOGE("%s: ERROR. audio_hw_acdb_init_v2 failed status %d", __func__, ret);
+            my_data->acdb_deinit();
             goto cleanup;
         }
     } else if (my_data->audio_hw_acdb_init) {
             ret = my_data->audio_hw_acdb_init(snd_card_num);
             if (ret) {
                 ALOGE("%s: ERROR. audio_hw_acdb_init failed status %d", __func__, ret);
+                my_data->acdb_deinit();
                 goto cleanup;
             }
     } else {
@@ -3978,7 +3989,7 @@ static int get_st_device
     case AUDIO_DEVICE_IN_WIRED_HEADSET:
         if ((ST_EXEC_MODE_CPE == exec_mode) ||
             (ST_EXEC_MODE_ADSP == exec_mode)) {
-            if (my_data->codec_backend_cfg.lpi_enable)
+            if (my_data->stdev->lpi_enable)
                 st_device = ST_DEVICE_HEADSET_MIC_LPI;
             else
                 st_device = ST_DEVICE_HEADSET_MIC;
@@ -4046,10 +4057,10 @@ static int get_st_device
                 else
                     st_device = ST_DEVICE_HANDSET_DMIC;
             } else if (channel_count == SOUND_TRIGGER_CHANNEL_MODE_MONO) {
-                if (v_info->profile_type != ST_PROFILE_TYPE_NONE)
-                    st_device = ST_DEVICE_HANDSET_MIC_PP;
-                else
+                if (my_data->stdev->lpi_enable)
                     st_device = ST_DEVICE_HANDSET_MIC;
+                else
+                    st_device = ST_DEVICE_HANDSET_MIC_PP;
             } else {
                 ALOGE("%s: Invalid channel count %d", __func__, channel_count);
             }
@@ -5330,7 +5341,7 @@ int platform_stdev_send_stream_app_type_cfg
     bool found_profile = false;
     int st_device_be_idx = -EINVAL;
 
-    if (profile_type == ST_PROFILE_TYPE_NONE) {
+    if (!stdev->lpi_enable && (profile_type == ST_PROFILE_TYPE_NONE)) {
         ALOGV("%s: Profile set to None, ignore sending app type cfg",__func__);
         goto exit;
     }
@@ -5364,16 +5375,31 @@ int platform_stdev_send_stream_app_type_cfg
         goto exit;
     }
 
-    list_for_each_safe(p_node, temp_node, &stdev->adm_cfg_list) {
-        cfg_info = node_to_item(p_node, struct adm_cfg_info, list_node);
-        if (cfg_info->profile_type == profile_type) {
-            found_profile = true;
-            app_type_cfg[len++] = cfg_info->app_type;
-            app_type_cfg[len++] = acdb_id;
-            app_type_cfg[len++] = cfg_info->sample_rate;
-            if (st_device_be_idx >= 0)
-                app_type_cfg[len++] = st_device_be_idx;
-            break;
+    if (stdev->lpi_enable) {
+        /*
+         * Though app_type_cfg is for ADM connection, driver needs atleast LPI
+         * acdb id  to avoid sending a cached non-lpi acdb stale topology of any
+         * concurrent audio use case for SVA LPI use case.
+         */
+        ALOGD("%s: send Stream App Type Cfg for LPI",__func__);
+        found_profile = true;
+        app_type_cfg[len++] = 0;
+        app_type_cfg[len++] = acdb_id;
+        app_type_cfg[len++] = SOUND_TRIGGER_SAMPLING_RATE_16000;
+        if (st_device_be_idx >= 0)
+            app_type_cfg[len++] = st_device_be_idx;
+    } else {
+        list_for_each_safe(p_node, temp_node, &stdev->adm_cfg_list) {
+            cfg_info = node_to_item(p_node, struct adm_cfg_info, list_node);
+            if (cfg_info->profile_type == profile_type) {
+                found_profile = true;
+                app_type_cfg[len++] = cfg_info->app_type;
+                app_type_cfg[len++] = acdb_id;
+                app_type_cfg[len++] = cfg_info->sample_rate;
+                if (st_device_be_idx >= 0)
+                    app_type_cfg[len++] = st_device_be_idx;
+                break;
+            }
         }
     }
 
@@ -5730,12 +5756,13 @@ bool platform_stdev_check_backends_match
 
 void platform_stdev_check_and_append_usecase
 (
-   void *platform __unused,
-   char *use_case,
-   st_profile_type_t profile_type
+   void *platform,
+   char *use_case
 )
 {
-    if (profile_type != ST_PROFILE_TYPE_NONE)
+    struct platform_data *my_data = (struct platform_data *)platform;
+
+    if (!my_data->stdev->lpi_enable)
         strlcat(use_case, " preproc", USECASE_STRING_SIZE);
 
     ALOGV("%s: return usecase %s", __func__, use_case);
