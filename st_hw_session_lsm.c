@@ -580,7 +580,7 @@ static st_profile_type_t get_profile_type(st_hw_session_t *p_ses)
 {
     st_profile_type_t profile_type;
 
-    profile_type = (p_ses->vendor_uuid_info && !p_ses->stdev->lpi_enable) ?
+    profile_type = (p_ses->vendor_uuid_info && !p_ses->lpi_enable) ?
                    p_ses->vendor_uuid_info->profile_type : ST_PROFILE_TYPE_NONE;
     return profile_type;
 }
