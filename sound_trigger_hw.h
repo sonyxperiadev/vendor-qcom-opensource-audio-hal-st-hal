@@ -177,6 +177,7 @@ struct sound_trigger_device {
     volatile int gcs_token;
     pthread_mutex_t ref_cnt_lock;
     int *dev_ref_cnt;
+    int *dev_enable_cnt;
     audio_devices_t available_devices;
     pthread_t transitions_thread;
     pthread_cond_t transitions_cond;
