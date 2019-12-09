@@ -2,7 +2,7 @@
  *
  * This file implements the hw session functionality of SVA using capture path
  *
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -293,7 +293,8 @@ static int check_and_set_ec_ref_device(st_hw_session_t *p_ses, bool enable)
             return -EINVAL;
         }
 
-        if (p_ses->stdev->ec_ref_dev & AUDIO_DEVICE_OUT_LINE)
+        if (platform_stdev_compare_device_type(p_ses->stdev->ec_ref_dev,
+            AUDIO_DEVICE_OUT_LINE))
             strlcat(st_device_name, " lineout",  DEVICE_NAME_MAX_SIZE);
 
         ALOGD("%s: enable device = %s", __func__,

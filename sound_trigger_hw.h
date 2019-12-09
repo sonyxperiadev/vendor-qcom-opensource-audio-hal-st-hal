@@ -3,7 +3,7 @@
  * This file contains the API to load sound models with
  * DSP and start/stop detection of associated key phrases.
  *
- * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -177,7 +177,7 @@ struct sound_trigger_device {
     volatile int gcs_token;
     pthread_mutex_t ref_cnt_lock;
     int *dev_ref_cnt;
-    audio_devices_t available_devices;
+    struct listnode available_devices;
     pthread_t transitions_thread;
     pthread_cond_t transitions_cond;
 
@@ -254,8 +254,8 @@ struct sound_trigger_device {
     mulaw_dec_process_t mulaw_dec_process;
 
     struct listnode adm_cfg_list;
-    audio_devices_t ec_ref_dev;
-    audio_devices_t active_rx_dev;
+    struct listnode ec_ref_dev_list;
+    struct listnode active_rx_dev_list;
 
     bool ssr_offline_received;
     int lpma_handle;
@@ -274,6 +274,12 @@ st_session_t* get_sound_trigger_session
     struct sound_trigger_device *stdev,
     sound_model_handle_t sound_model_handle
 );
+
+struct audio_device_info {
+    struct listnode list;
+    audio_devices_t type;
+    char address[AUDIO_DEVICE_MAX_ADDRESS_LEN];
+};
 
 void update_hw_mad_exec_mode(st_exec_mode_t mode, st_profile_type_t profile_type);
 

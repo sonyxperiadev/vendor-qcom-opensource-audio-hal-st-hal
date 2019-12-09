@@ -3,7 +3,7 @@
  * This file contains the API to load sound models with
  * DSP and start/stop detection of associated key phrases.
  *
- * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -744,13 +744,19 @@ static void handle_audio_ec_ref_enabled(audio_event_info_t* config)
 static void handle_audio_concurrency(audio_event_type_t event_type,
     audio_event_info_t* config)
 {
-    struct listnode *p_ses_node = NULL;
+    struct listnode *p_ses_node = NULL, *node = NULL;
     st_session_t *p_ses = NULL;
     bool conc_allowed = false, lpi_changed = false, barge_in_mode = false;
     unsigned int num_sessions = 0;
+    struct audio_device_info *item = NULL;
 
-    ALOGV_IF(config != NULL, "%s: Enter, event type = %d, audio device = %d",
-             __func__, event_type, config->device_info.device);
+    if (config != NULL) {
+        ALOGV("%s: Event type = %d", __func__, event_type);
+        list_for_each (node, &config->device_info.devices) {
+            item = node_to_item(node, struct audio_device_info, list);
+            ALOGV("%s: Audio device = 0x%x", __func__, item->type);
+        }
+    }
 
     /*
     UC1:
@@ -1090,7 +1096,8 @@ static void handle_device_switch(bool connect, audio_event_info_t* config)
      * of enabling the device for a use case, actual device will be selected
      * based on internal device selection policy
      */
-    platform_stdev_update_avail_device(stdev->platform, device, connect);
+    platform_stdev_update_device_list(device, "", &stdev->available_devices,
+        connect);
 
     if ((connect && (cur_device == device)) ||
          (!connect && (cur_device != device))) {
@@ -1216,10 +1223,7 @@ static void handle_echo_ref_switch(audio_event_type_t event_type,
 {
     struct listnode *node = NULL;
     st_session_t *p_ses = NULL;
-    audio_devices_t ec_ref_devices = AUDIO_DEVICE_OUT_ALL_A2DP |
-                                     AUDIO_DEVICE_OUT_LINE |
-                                     AUDIO_DEVICE_OUT_SPEAKER |
-                                     AUDIO_DEVICE_IN_WIRED_HEADSET;
+
     if (config == NULL) {
         ALOGV("%s: null config event received!", __func__);
         return;
@@ -1227,14 +1231,24 @@ static void handle_echo_ref_switch(audio_event_type_t event_type,
 
     pthread_mutex_lock(&stdev->lock);
     if (AUDIO_EVENT_PLAYBACK_STREAM_ACTIVE == event_type &&
-        stdev->active_rx_dev != (audio_devices_t)config->device_info.device) {
+        !platform_stdev_compare_devices(&config->device_info.devices,
+            &stdev->active_rx_dev_list)) {
         /*
          * if currently no active ADSP session available, then echo
          * reference will be enabled during session transition
          */
-        stdev->active_rx_dev = config->device_info.device;
+        platform_stdev_assign_devices(&stdev->active_rx_dev_list,
+            &config->device_info.devices);
         if (get_num_sessions_in_exec_mode(ST_EXEC_MODE_ADSP) > 0 &&
-            stdev->active_rx_dev & ec_ref_devices) {
+            (platform_stdev_is_a2dp_out_device_type(
+                 &stdev->active_rx_dev_list) ||
+             platform_stdev_compare_device_type(&stdev->active_rx_dev_list,
+                 AUDIO_DEVICE_OUT_LINE) ||
+             platform_stdev_compare_device_type(&stdev->active_rx_dev_list,
+                 AUDIO_DEVICE_OUT_SPEAKER) ||
+             platform_stdev_compare_device_type(&stdev->active_rx_dev_list,
+                 AUDIO_DEVICE_IN_WIRED_HEADSET))) {
+
             /* pause and resume ADSP sessions to send new echo reference */
             list_for_each(node, &stdev->sound_model_list) {
                 p_ses = node_to_item(node, st_session_t, list_node);
@@ -2736,10 +2750,16 @@ static int stdev_open(const hw_module_t* module, const char* name,
     stdev->session_id = 1;
     stdev->gcs_token = 1;
     stdev->exec_mode = ST_EXEC_MODE_MAX;
-    stdev->available_devices = AUDIO_DEVICE_IN_BUILTIN_MIC;
     stdev->client_req_exec_mode = ST_EXEC_MODE_NONE;
-    stdev->ec_ref_dev = AUDIO_DEVICE_OUT_SPEAKER;
-    stdev->active_rx_dev = AUDIO_DEVICE_OUT_SPEAKER;
+    list_init(&stdev->available_devices);
+    platform_stdev_update_device_list(AUDIO_DEVICE_IN_BUILTIN_MIC, "",
+        &stdev->available_devices, true);
+    list_init(&stdev->ec_ref_dev_list);
+    platform_stdev_update_device_list(AUDIO_DEVICE_OUT_SPEAKER, "",
+        &stdev->ec_ref_dev_list, true);
+    list_init(&stdev->active_rx_dev_list);
+    platform_stdev_update_device_list(AUDIO_DEVICE_OUT_SPEAKER, "",
+        &stdev->active_rx_dev_list, true);
     stdev->session_allowed = true;
     stdev->reset_backend = true;
     stdev->conc_voice_active = false;
@@ -2968,12 +2988,15 @@ int sound_trigger_hw_call_back(audio_event_type_t event,
             break;
         }
         if (config->u.value == AUDIO_DEVICE_OUT_LINE ||
-            config->u.value & AUDIO_DEVICE_OUT_ALL_A2DP) {
+            config->u.value == AUDIO_DEVICE_OUT_BLUETOOTH_A2DP ||
+            config->u.value == AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES ||
+            config->u.value == AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER) {
             pthread_mutex_lock(&stdev->lock);
-            stdev->ec_ref_dev |= config->u.value;
+            platform_stdev_update_device_list(config->u.value, "",
+                &stdev->ec_ref_dev_list, true);
             pthread_mutex_unlock(&stdev->lock);
-            ALOGD("%s: Device connected. Updated ec ref devices as %d",
-                  __func__, stdev->ec_ref_dev);
+            ALOGD("%s: Device connected. Updated ec ref devices with %d",
+                  __func__, config->u.value);
         } else {
             handle_device_switch(true, config);
         }
@@ -2986,16 +3009,19 @@ int sound_trigger_hw_call_back(audio_event_type_t event,
             break;
         }
         if (config->u.value == AUDIO_DEVICE_OUT_LINE ||
-            config->u.value & AUDIO_DEVICE_OUT_ALL_A2DP) {
+            config->u.value == AUDIO_DEVICE_OUT_BLUETOOTH_A2DP ||
+            config->u.value == AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES ||
+            config->u.value == AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER) {
             pthread_mutex_lock(&stdev->lock);
             /*
              * Currently spkr/lineout/a2dp are the supported ec ref devices
              * Set default EC ref device (spkr) if lineout/a2dp is disconnected
              */
-            stdev->ec_ref_dev &= ~config->u.value;
+            platform_stdev_update_device_list(config->u.value, "",
+                &stdev->ec_ref_dev_list, false);
             pthread_mutex_unlock(&stdev->lock);
-            ALOGD("%s: Device disconnected. Updated ec ref devices as %d",
-                  __func__, stdev->ec_ref_dev);
+            ALOGD("%s: Device disconnected. Updated ec ref devices by removing %d",
+                  __func__, config->u.value);
         } else {
             handle_device_switch(false, config);
         }

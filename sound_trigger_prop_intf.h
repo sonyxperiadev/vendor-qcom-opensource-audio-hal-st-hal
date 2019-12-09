@@ -3,7 +3,7 @@
  * Interface for sound trigger related communication
  * across modules.
  *
- * Copyright (c) 2014, 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014, 2016-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -41,9 +41,8 @@
 #define MINOR_VERSION(ver) ((ver) & 0x00ff)
 
 /* Proprietary interface version used for compatibility with AHAL */
-#define STHAL_PROP_API_VERSION_1_0 MAKE_HAL_VERSION(1, 0)
-#define STHAL_PROP_API_VERSION_1_1 MAKE_HAL_VERSION(1, 1)
-#define STHAL_PROP_API_CURRENT_VERSION STHAL_PROP_API_VERSION_1_1
+#define STHAL_PROP_API_VERSION_2_0 MAKE_HAL_VERSION(2, 0)
+#define STHAL_PROP_API_CURRENT_VERSION STHAL_PROP_API_VERSION_2_0
 
 #define ST_EVENT_CONFIG_MAX_STR_VALUE 32
 
@@ -117,7 +116,7 @@ struct sound_trigger_event_info {
 };
 
 struct sound_trigger_device_info {
-    int device;
+    struct listnode devices;
 };
 
 struct sound_trigger_get_param_data {
