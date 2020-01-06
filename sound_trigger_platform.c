@@ -742,6 +742,7 @@ static void platform_stdev_set_default_config(struct platform_data *platform)
     stdev->platform_lpi_enable = ST_PLATFORM_LPI_NONE;
     stdev->screen_off = true;
     stdev->support_dynamic_ec_update = true;
+    stdev->ec_reset_pending_cnt = 0;
 
     platform->cpe_fe_to_be_fixed = true;
     platform->bad_mic_channel_index = 0;
@@ -5681,6 +5682,12 @@ void platform_stdev_send_ec_ref_cfg
 
     if (is_ec_profile(profile_type)) {
         event_info.st_ec_ref_enabled = enable;
+        // reset the pending active EC mixer ctls first
+        if (!stdev->audio_ec_enabled && stdev->ec_reset_pending_cnt > 0) {
+            while (stdev->ec_reset_pending_cnt--)
+                audio_route_reset_and_update_path(stdev->audio_route,
+                        my_data->ec_ref_mixer_path);
+        }
         if (enable) {
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);
             strlcpy(my_data->ec_ref_mixer_path, "echo-reference",
@@ -5701,6 +5708,7 @@ void platform_stdev_send_ec_ref_cfg
                 audio_route_reset_and_update_path(stdev->audio_route,
                         my_data->ec_ref_mixer_path);
             } else {
+                stdev->ec_reset_pending_cnt++;
                 ALOGD("%s: audio hal has already enabled EC", __func__);
             }
         }
