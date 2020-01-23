@@ -2,7 +2,7 @@
  *
  * This file contains the platform specific functionality.
  *
- * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -3136,6 +3136,194 @@ static void init_codec_backend_cfg_mixer_ctl(struct platform_data *my_data)
     }
 }
 
+/* ---------------- device list APIs --------------- */
+static int list_length(struct listnode *list)
+{
+    struct listnode *node;
+    int length = 0;
+
+    if (list == NULL)
+        goto done;
+
+    for (node = list->next; node != list; node = node->next)
+        ++length;
+done:
+    return length;
+}
+
+/*
+ * Clear device list
+ * Operation: devices = {};
+ */
+static int clear_devices(struct listnode *devices)
+{
+    struct listnode *node = NULL;
+    struct audio_device_info *item = NULL;
+
+    if (devices == NULL)
+        return 0;
+
+    list_for_each (node, devices) {
+        item = node_to_item(node, struct audio_device_info, list);
+        if (item != NULL) {
+            list_remove(&item->list);
+            free(item);
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * Returns true if A2DP output device is found in passed devices list
+ */
+bool platform_stdev_is_a2dp_out_device_type(struct listnode *devices)
+{
+    if (devices == NULL)
+        return false;
+
+    if (platform_stdev_compare_device_type(devices,
+            AUDIO_DEVICE_OUT_BLUETOOTH_A2DP) ||
+        platform_stdev_compare_device_type(devices,
+            AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES) ||
+        platform_stdev_compare_device_type(devices,
+            AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER))
+        return true;
+    else
+        return false;
+}
+
+/*
+ * Check if a device with given type is present in devices list
+ */
+bool platform_stdev_compare_device_type(struct listnode *devices,
+                                        audio_devices_t device_type)
+{
+    struct listnode *node = NULL;
+    struct audio_device_info *item = NULL;
+
+    if (devices == NULL)
+        return false;
+
+    list_for_each (node, devices) {
+        item = node_to_item(node, struct audio_device_info, list);
+        if (item != NULL && (item->type == device_type)) {
+            ALOGV("%s: device types %d match", __func__, device_type);
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * Returns true if lists are equal in terms of device type
+ * TODO: Check if device addresses are also equal in the future
+ */
+bool platform_stdev_compare_devices(struct listnode *d1, struct listnode *d2)
+{
+    struct listnode *node = NULL;
+    struct audio_device_info *item = NULL;
+
+    if (d1 == NULL && d2 == NULL)
+        return true;
+
+    if (d1 == NULL || d2 == NULL ||
+        (list_length(d1) != list_length(d2)))
+        return false;
+
+    list_for_each (node, d1) {
+        item = node_to_item(node, struct audio_device_info, list);
+        if (item != NULL &&
+            !platform_stdev_compare_device_type(d2, item->type))
+            return false;
+    }
+    return true;
+}
+
+/*
+ * Add or remove device from list denoted by head
+ */
+int platform_stdev_update_device_list(audio_devices_t type, char* address,
+                       struct listnode *head, bool add_device)
+{
+    struct listnode *node = NULL;
+    struct audio_device_info *item = NULL;
+    struct audio_device_info *device = NULL;
+    int ret = 0;
+
+    if (head == NULL)
+        goto done;
+
+    if (type == AUDIO_DEVICE_NONE) {
+        ALOGE("%s: Invalid device: %#x", __func__, type);
+        ret = -EINVAL;
+        goto done;
+    }
+
+    list_for_each (node, head) {
+        item = node_to_item(node, struct audio_device_info, list);
+        if (item != NULL && (item->type == type)) {
+            device = item;
+            break;
+        }
+    }
+
+    if (add_device) {
+        if (device == NULL) {
+            device = (struct audio_device_info *)
+                        calloc (1, sizeof(struct audio_device_info));
+            if (!device) {
+                ALOGE("%s: Cannot allocate memory for device_info", __func__);
+                ret = -ENOMEM;
+                goto done;
+            }
+            device->type = type;
+            list_add_tail(head, &device->list);
+        }
+        /*
+         * TODO: Use address in future if required. Currently NULL string used.
+         */
+        strlcpy(device->address, address, AUDIO_DEVICE_MAX_ADDRESS_LEN);
+        ALOGV("%s: Added device type %#x, address %s", __func__, type,
+            address);
+    } else {
+        if (device != NULL) {
+            list_remove(&device->list);
+            free(device);
+            ALOGV("%s: Removed device type %#x, address %s", __func__, type,
+                address);
+        }
+    }
+done:
+    return ret;
+}
+
+/*
+ * Assign source device list to destination device list
+ * Operation: dest list = source list
+ */
+int platform_stdev_assign_devices(struct listnode *dest,
+                                  const struct listnode *source)
+{
+    struct listnode *node;
+    struct audio_device_info *item = NULL;
+    int ret = 0;
+
+    if (source == NULL || dest == NULL)
+        return ret;
+
+    if (!list_empty(dest))
+        clear_devices(dest);
+
+    list_for_each (node, source) {
+        item = node_to_item(node, struct audio_device_info, list);
+        if (item != NULL)
+            ret = platform_stdev_update_device_list(item->type, item->address,
+                dest, true);
+    }
+    return ret;
+}
+
 #if (SNDRV_LSM_VERSION >= SNDRV_PROTOCOL_VERSION(0, 3, 0))
 static void platform_stdev_send_adm_app_type_cfg(void *platform)
 {
@@ -4096,35 +4284,24 @@ audio_devices_t platform_stdev_get_capture_device
     struct platform_data *my_data = (struct platform_data *)platform;
     sound_trigger_device_t *stdev = my_data->stdev;
     audio_devices_t device = AUDIO_DEVICE_NONE;
-    audio_devices_t avail_devices = stdev->available_devices &
-                                     ~AUDIO_DEVICE_BIT_IN;
+    struct audio_device_info *item = NULL;
+    struct listnode *node = NULL;
 
-    if (avail_devices & AUDIO_DEVICE_IN_WIRED_HEADSET)
+    if (platform_stdev_compare_device_type(&stdev->available_devices,
+        AUDIO_DEVICE_IN_WIRED_HEADSET)) {
         device = AUDIO_DEVICE_IN_WIRED_HEADSET;
-    else if (avail_devices & AUDIO_DEVICE_IN_BUILTIN_MIC)
+    } else if (platform_stdev_compare_device_type(&stdev->available_devices,
+        AUDIO_DEVICE_IN_BUILTIN_MIC)) {
         device = AUDIO_DEVICE_IN_BUILTIN_MIC;
+    }
 
-    ALOGD("%s: available devices 0x%x, device 0x%x", __func__,
-                         stdev->available_devices, device);
+    ALOGD("%s: Device = 0x%x", __func__, device);
+    list_for_each (node, &stdev->available_devices) {
+        item = node_to_item(node, struct audio_device_info, list);
+        ALOGD("%s: Available device = 0x%x", __func__, item->type);
+    }
+
     return device;
-}
-
-int platform_stdev_update_avail_device
-(
-    void *platform,
-    audio_devices_t device,
-    bool connect
-)
-{
-    struct platform_data *my_data = (struct platform_data *)platform;
-    sound_trigger_device_t *stdev = my_data->stdev;
-
-    if (connect)
-        stdev->available_devices |= device;
-    else
-        stdev->available_devices &= ~device;
-
-    return 0;
 }
 
 static int get_backend_index_from_name
@@ -5440,19 +5617,23 @@ int platform_stdev_get_device_app_type
 static void check_and_append_ec_ref_device_name
 (
     void *platform,
-    char *ec_ref_mixer_path,
-    audio_devices_t rx_device
+    char *ec_ref_mixer_path
 )
 {
     audio_devices_t capture_device = 0;
+    struct platform_data *my_data = (struct platform_data *)platform;
 
     capture_device = platform_stdev_get_capture_device(platform);
-    if (capture_device == AUDIO_DEVICE_IN_WIRED_HEADSET)
+    if (capture_device == AUDIO_DEVICE_IN_WIRED_HEADSET) {
         strlcat(ec_ref_mixer_path, " headset",  DEVICE_NAME_MAX_SIZE);
-    else if (rx_device & AUDIO_DEVICE_OUT_ALL_A2DP)
+    } else if (platform_stdev_is_a2dp_out_device_type(
+                   &my_data->stdev->active_rx_dev_list)) {
         strlcat(ec_ref_mixer_path, " a2dp",  DEVICE_NAME_MAX_SIZE);
-    else if (rx_device & AUDIO_DEVICE_OUT_LINE)
+    } else if (platform_stdev_compare_device_type(
+                   &my_data->stdev->active_rx_dev_list,
+                   AUDIO_DEVICE_OUT_LINE)) {
         strlcat(ec_ref_mixer_path, " line",  DEVICE_NAME_MAX_SIZE);
+    }
 }
 
 int platform_stdev_update_ec_effect
@@ -5506,8 +5687,7 @@ void platform_stdev_send_ec_ref_cfg
                     sizeof(my_data->ec_ref_mixer_path));
 
             check_and_append_ec_ref_device_name(platform,
-                                                my_data->ec_ref_mixer_path,
-                                                stdev->active_rx_dev);
+                                                my_data->ec_ref_mixer_path);
 
             audio_route_apply_and_update_path(stdev->audio_route,
                     my_data->ec_ref_mixer_path);

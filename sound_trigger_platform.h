@@ -1,6 +1,6 @@
 /* sound_trigger_platform.h
  *
- * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -424,6 +424,15 @@ typedef struct acdb_audio_cal_cfg {
     unsigned int param_id;
 } acdb_audio_cal_cfg_t;
 
+bool platform_stdev_is_a2dp_out_device_type(struct listnode *devices);
+bool platform_stdev_compare_device_type(struct listnode *devices,
+    audio_devices_t device_type);
+bool platform_stdev_compare_devices(struct listnode *d1, struct listnode *d2);
+int platform_stdev_update_device_list(audio_devices_t type, char* address,
+    struct listnode *head, bool add_device);
+int platform_stdev_assign_devices(struct listnode *dest,
+    const struct listnode *source);
+
 void *platform_stdev_init(struct sound_trigger_device *stdev);
 
 void platform_stdev_deinit(void *platform);
@@ -451,13 +460,6 @@ int platform_stdev_get_device_name
 );
 
 audio_devices_t platform_stdev_get_capture_device(void *platform);
-
-int platform_stdev_update_avail_device
-(
-    void *platform,
-    audio_devices_t device,
-    bool connect
-);
 
 int platform_stdev_send_calibration
 (
