@@ -1,6 +1,6 @@
 /* st_common_defs.h
  *
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -102,6 +102,7 @@ do {\
 #define GENERIC_DET_EVENT_HEADER_SIZE (8)
 #define FIRST_STAGE_KW_START_TOLERANCE_MS (300)
 #define FIRST_STAGE_KW_END_TOLERANCE_MS (240)
+#define VOP_DATA_BEFORE_TRUE_KW_START_MS (360)
 #define CNN_DATA_AFTER_TRUE_KW_END_MS (200)
 #define GENERIC_DET_EVENT_USER_LEVEL_OFFSET (17)
 #define GCS_NON_GENERIC_USER_LEVEL_OFFSET (3)
