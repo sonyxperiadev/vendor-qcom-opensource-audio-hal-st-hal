@@ -905,8 +905,6 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
                 }
             }
 
-            platform_stdev_reset_backend_cfg(stdev->platform);
-
             list_for_each(p_ses_node, &stdev->sound_model_list) {
                 p_ses = node_to_item(p_ses_node, st_session_t, list_node);
                 if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
@@ -1149,8 +1147,6 @@ static void handle_screen_status_change(audio_event_info_t* config)
             }
         }
 
-        platform_stdev_reset_backend_cfg(stdev->platform);
-
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
             if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
@@ -1202,8 +1198,6 @@ static void handle_battery_status_change(audio_event_info_t* config)
                 st_session_pause(p_ses);
             }
         }
-
-        platform_stdev_reset_backend_cfg(stdev->platform);
 
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
