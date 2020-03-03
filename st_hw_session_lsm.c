@@ -2,7 +2,7 @@
  *
  * This file implements the hw session functionality specific to LSM HW
  *
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -2504,7 +2504,8 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
         goto error_exit;
     }
 
-    if (!p_ses->stdev->lpi_enable && !p_ses->stdev->barge_in_mode) {
+    if (!p_ses->stdev->lpi_enable && !p_ses->stdev->barge_in_mode &&
+         p_ses->stdev->support_barge_in_mode) {
         status = platform_stdev_update_ec_effect(p_ses->stdev->platform,
             false);
         if (status) {
@@ -3936,7 +3937,8 @@ static int route_enable_device(st_hw_session_t *p_ses, bool setting_device)
         goto exit_1;
     }
 
-    if (!p_ses->stdev->lpi_enable && !p_ses->stdev->barge_in_mode) {
+    if (!p_ses->stdev->lpi_enable && !p_ses->stdev->barge_in_mode &&
+         p_ses->stdev->support_barge_in_mode) {
         status = platform_stdev_update_ec_effect(p_ses->stdev->platform,
             false);
         if (status) {
