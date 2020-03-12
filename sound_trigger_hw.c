@@ -3,7 +3,7 @@
  * This file contains the API to load sound models with
  * DSP and start/stop detection of associated key phrases.
  *
- * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -1234,7 +1234,8 @@ static void handle_echo_ref_switch(audio_event_type_t event_type,
          */
         stdev->active_rx_dev = config->device_info.device;
         if (get_num_sessions_in_exec_mode(ST_EXEC_MODE_ADSP) > 0 &&
-            stdev->active_rx_dev & ec_ref_devices) {
+            (stdev->active_rx_dev & ec_ref_devices) &&
+             stdev->session_allowed) {
             /* pause and resume ADSP sessions to send new echo reference */
             list_for_each(node, &stdev->sound_model_list) {
                 p_ses = node_to_item(node, st_session_t, list_node);
