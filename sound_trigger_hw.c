@@ -1246,8 +1246,8 @@ static void handle_echo_ref_switch(audio_event_type_t event_type,
              platform_stdev_compare_device_type(&stdev->active_rx_dev_list,
                  AUDIO_DEVICE_OUT_SPEAKER) ||
              platform_stdev_compare_device_type(&stdev->active_rx_dev_list,
-                 AUDIO_DEVICE_IN_WIRED_HEADSET))) {
-
+                 AUDIO_DEVICE_IN_WIRED_HEADSET)) &&
+             stdev->session_allowed) {
             /* pause and resume ADSP sessions to send new echo reference */
             list_for_each(node, &stdev->sound_model_list) {
                 p_ses = node_to_item(node, st_session_t, list_node);
