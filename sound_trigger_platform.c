@@ -5692,10 +5692,12 @@ void platform_stdev_send_ec_ref_cfg
     if (is_ec_profile(profile_type)) {
         event_info.st_ec_ref_enabled = enable;
         // reset the pending active EC mixer ctls first
-        if (!stdev->audio_ec_enabled && stdev->ec_reset_pending_cnt > 0) {
-            while (stdev->ec_reset_pending_cnt--)
+        if (!stdev->audio_ec_enabled) {
+            while (stdev->ec_reset_pending_cnt > 0) {
                 audio_route_reset_and_update_path(stdev->audio_route,
                         my_data->ec_ref_mixer_path);
+                stdev->ec_reset_pending_cnt--;
+            }
         }
         if (enable) {
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);
