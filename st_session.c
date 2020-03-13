@@ -1299,7 +1299,7 @@ static void get_conf_levels_from_dsp_payload(st_proxy_session_t *st_ses,
             payload += i;
         }
     } else {
-        if ((st_ses->exec_mode == ST_EXEC_MODE_CPE) && st_ses->stdev->is_gcs) {
+        if (st_ses->exec_mode == ST_EXEC_MODE_CPE) {
             *conf_levels = payload + 2;
             *conf_levels_size = payload_size - 2;
         } else {
@@ -2033,7 +2033,7 @@ static int parse_rc_config_key_conf_levels
         for (i = 0; i < conf_levels->num_sound_models; i++) {
             sm_levels = &conf_levels->conf_levels[i];
             if (sm_levels->sm_id == ST_SM_ID_SVA_GMM) {
-                if ((st_ses->stdev->is_gcs) && (st_hw_ses == st_ses->hw_ses_cpe))
+                if (st_hw_ses == st_ses->hw_ses_cpe)
                     status =
                         generate_sound_trigger_recognition_config_payload_v2(
                         (void *)sm_levels, out_conf_levels, out_num_conf_levels,
@@ -2090,8 +2090,7 @@ static int parse_rc_config_key_conf_levels
         for (i = 0; i < conf_levels_v2->num_sound_models; i++) {
             sm_levels_v2 = &conf_levels_v2->conf_levels[i];
             if (sm_levels_v2->sm_id == ST_SM_ID_SVA_GMM) {
-                if ((st_ses->stdev->is_gcs) &&
-                    (st_hw_ses == st_ses->hw_ses_cpe))
+                if (st_hw_ses == st_ses->hw_ses_cpe)
                     status =
                         generate_sound_trigger_recognition_config_payload_v2(
                         (void *)sm_levels_v2, out_conf_levels, out_num_conf_levels,
@@ -2269,7 +2268,7 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
 
         if (st_ses->vendor_uuid_info->is_qcva_uuid ||
             st_ses->vendor_uuid_info->is_qcmd_uuid) {
-            if (st_ses->stdev->is_gcs && st_hw_ses == st_ses->hw_ses_cpe)
+            if (st_hw_ses == st_ses->hw_ses_cpe)
                 status = generate_conf_levels_payload_from_rc_config_v2(
                     phrase_sm, rc_config, &conf_levels, &num_conf_levels);
             else
@@ -2768,12 +2767,10 @@ static int get_first_stage_detection_params(st_proxy_session_t *st_ses,
         }
 
         if (is_active_vop_session) {
-            if ((st_ses->exec_mode == ST_EXEC_MODE_CPE) &&
-                 st_ses->stdev->is_gcs) {
+            if (st_ses->exec_mode == ST_EXEC_MODE_CPE) {
                 hw_ses->user_level = (int32_t)(*(payload_ptr +
                     GCS_NON_GENERIC_USER_LEVEL_OFFSET));
-            } else if ((st_ses->exec_mode == ST_EXEC_MODE_ADSP) ||
-                       !st_ses->stdev->is_gcs) {
+            } else if (st_ses->exec_mode == ST_EXEC_MODE_ADSP) {
                 hw_ses->user_level = (int32_t)(*(payload_ptr +
                     LSM_NON_GENERIC_USER_LEVEL_OFFSET));
             }
@@ -3424,11 +3421,10 @@ static int process_detection_event_keyphrase(
             sizeof(struct sound_trigger_phrase_recognition_event);
         local_event->common.data_size = opaque_size;
         opaque_data = (uint8_t *)local_event + local_event->common.data_offset;
-        if ((st_ses->exec_mode == ST_EXEC_MODE_CPE) && st_ses->stdev->is_gcs) {
+        if (st_ses->exec_mode == ST_EXEC_MODE_CPE) {
             payload_ptr = (uint8_t *)payload + 2;
             payload_size -= 2; /* Re-use */
-        } else if ((st_ses->exec_mode == ST_EXEC_MODE_ADSP) ||
-                   !st_ses->stdev->is_gcs) {
+        } else if (st_ses->exec_mode == ST_EXEC_MODE_ADSP) {
             payload_ptr = (uint8_t *)payload;
         } else {
             ALOGE("%s: Invalid execution mode, exiting", __func__);
@@ -3508,8 +3504,7 @@ static int process_detection_event_keyphrase(
     } else {
         if (st_ses->vendor_uuid_info->is_qcva_uuid ||
             st_ses->vendor_uuid_info->is_qcmd_uuid) {
-            if (st_ses->stdev->is_gcs &&
-                ST_EXEC_MODE_CPE == st_ses->exec_mode &&
+            if (ST_EXEC_MODE_CPE == st_ses->exec_mode &&
                 !st_hw_ses->is_generic_event) {
                 payload_ptr = payload;
                 payload_ptr += 2; /* Skip minor_version and num_active_models */
@@ -6216,70 +6211,38 @@ int st_session_init(st_session_t *stc_ses, struct sound_trigger_device *stdev,
 
     if (v_info && (EXEC_MODE_CFG_DYNAMIC == v_info->exec_mode_cfg)) {
         st_ses->enable_trans = true;
-        if (stdev->is_gcs) {
             /* alloc and init cpe session*/
-            st_ses->hw_ses_cpe =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_gcs_t));
-            if (!st_ses->hw_ses_cpe) {
-                status = -ENOMEM;
-                goto cleanup;
-            }
-            status = st_hw_sess_gcs_init(st_ses->hw_ses_cpe, hw_sess_cb,
-                (void *)st_ses, ST_EXEC_MODE_CPE, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing gcs hw session failed %d", __func__,
-                    status);
-                goto cleanup;
-            }
-
-            /* alloc and init adsp session*/
-            st_ses->hw_ses_adsp =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
-            if (!st_ses->hw_ses_adsp) {
-                st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
-                status = -ENOMEM;
-                goto cleanup;
-            }
-
-            status = st_hw_sess_lsm_init(st_ses->hw_ses_adsp, hw_sess_cb,
-                (void *)st_ses, ST_EXEC_MODE_ADSP, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing lsm session failed", __func__);
-                st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
-                goto cleanup;
-            }
-
-        } else {
-            /* alloc and init cpe session*/
-            st_ses->hw_ses_cpe =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
-            if (!st_ses->hw_ses_cpe) {
-                status = -ENOMEM;
-                goto cleanup;
-            }
-            status = st_hw_sess_lsm_init(st_ses->hw_ses_cpe, hw_sess_cb,
-                (void *)st_ses, ST_EXEC_MODE_CPE, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initialzing lsm hw session failed %d", __func__,
-                    status);
-                goto cleanup;
-            }
-            /* alloc and init adsp session*/
-            st_ses->hw_ses_adsp =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
-            if (!st_ses->hw_ses_adsp) {
-                status = -ENOMEM;
-                st_hw_sess_lsm_deinit(st_ses->hw_ses_cpe);
-                goto cleanup;
-            }
-            status = st_hw_sess_lsm_init(st_ses->hw_ses_adsp, hw_sess_cb,
-                (void *)st_ses, ST_EXEC_MODE_ADSP, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing lsm session failed", __func__);
-                st_hw_sess_lsm_deinit(st_ses->hw_ses_cpe);
-                goto cleanup;
-            }
+        st_ses->hw_ses_cpe =
+            (st_hw_session_t *)calloc(1, sizeof(st_hw_session_gcs_t));
+        if (!st_ses->hw_ses_cpe) {
+            status = -ENOMEM;
+            goto cleanup;
         }
+        status = st_hw_sess_gcs_init(st_ses->hw_ses_cpe, hw_sess_cb,
+            (void *)st_ses, ST_EXEC_MODE_CPE, v_info, sm_handle, stdev);
+        if (status) {
+            ALOGE("%s: initializing gcs hw session failed %d", __func__,
+                status);
+            goto cleanup;
+        }
+
+        /* alloc and init adsp session*/
+        st_ses->hw_ses_adsp =
+            (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
+        if (!st_ses->hw_ses_adsp) {
+            st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
+            status = -ENOMEM;
+            goto cleanup;
+        }
+
+        status = st_hw_sess_lsm_init(st_ses->hw_ses_adsp, hw_sess_cb,
+            (void *)st_ses, ST_EXEC_MODE_ADSP, v_info, sm_handle, stdev);
+        if (status) {
+            ALOGE("%s: initializing lsm session failed", __func__);
+            st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
+            goto cleanup;
+        }
+
         /* set current hw_session */
         if (exec_mode == ST_EXEC_MODE_CPE)
             st_ses->hw_ses_current = st_ses->hw_ses_cpe;
@@ -6287,36 +6250,22 @@ int st_session_init(st_session_t *stc_ses, struct sound_trigger_device *stdev,
             st_ses->hw_ses_current = st_ses->hw_ses_adsp;
     } else if (v_info && (EXEC_MODE_CFG_CPE == v_info->exec_mode_cfg)) {
         st_ses->enable_trans = false;
-        if (stdev->is_gcs) {
-            ALOGD("%s: initializing gcs hw session", __func__);
-            st_ses->hw_ses_cpe =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_gcs_t));
-            if (!st_ses->hw_ses_cpe) {
-                status = -ENOMEM;
-                goto cleanup;
-            }
-            status = st_hw_sess_gcs_init(st_ses->hw_ses_cpe, hw_sess_cb,
-                (void *)st_ses, exec_mode, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing gcs hw session failed %d",
-                    __func__, status);
-                goto cleanup;
-            }
-        } else {
-            st_ses->hw_ses_cpe =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
-            if (!st_ses->hw_ses_cpe) {
-                status = -ENOMEM;
-                goto cleanup;
-            }
-            status = st_hw_sess_lsm_init(st_ses->hw_ses_cpe, hw_sess_cb,
-                (void *)st_ses, exec_mode, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing lsm hw session failed %d",
-                    __func__, status);
-                goto cleanup;
-            }
+
+        ALOGD("%s: initializing gcs hw session", __func__);
+        st_ses->hw_ses_cpe =
+            (st_hw_session_t *)calloc(1, sizeof(st_hw_session_gcs_t));
+        if (!st_ses->hw_ses_cpe) {
+            status = -ENOMEM;
+            goto cleanup;
         }
+        status = st_hw_sess_gcs_init(st_ses->hw_ses_cpe, hw_sess_cb,
+            (void *)st_ses, exec_mode, v_info, sm_handle, stdev);
+        if (status) {
+            ALOGE("%s: initializing gcs hw session failed %d",
+                __func__, status);
+            goto cleanup;
+        }
+
         st_ses->hw_ses_current = st_ses->hw_ses_cpe;
     } else if (v_info && (EXEC_MODE_CFG_APE == v_info->exec_mode_cfg)) {
         /*
@@ -6453,10 +6402,7 @@ int st_session_deinit(st_session_t *stc_ses)
     }
     /* deinit cpe session */
     if (st_ses->hw_ses_cpe) {
-        if (st_ses->stdev->is_gcs)
-            st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
-        else
-            st_hw_sess_lsm_deinit(st_ses->hw_ses_cpe);
+        st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
         free(st_ses->hw_ses_cpe);
         st_ses->hw_ses_cpe = NULL;
     }

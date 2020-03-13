@@ -218,7 +218,6 @@ struct sound_trigger_device {
 
     unsigned int rx_conc_max_st_ses;
     struct use_case_info *ape_pcm_use_cases;
-    struct use_case_info *cpe_pcm_use_cases;
     struct use_case_info *arm_pcm_use_cases;
     bool detect_failure;
     void *platform;
@@ -244,11 +243,6 @@ struct sound_trigger_device {
     smlib_mergeModels_t smlib_mergeModels;
     getSizeAfterDeleting_t smlib_getSizeAfterDeleting;
     deleteFromModel_t smlib_deleteFromModel;
-
-    void *adpcm_dec_lib_handle;
-    g722_init_decoder_t adpcm_dec_init;
-    g722_dec_get_total_byte_size_t adpcm_dec_get_scratch_size;
-    g722_dec_process_t adpcm_dec_process;
 
     void *mulaw_dec_lib_handle;
     mulaw_dec_process_t mulaw_dec_process;
