@@ -3299,13 +3299,6 @@ int process_detection_event_keyphrase_v2(
             }
         }
     } else {
-        local_event = calloc(1, sizeof(*local_event) + payload_size);
-        if (!local_event) {
-            ALOGE("%s: event allocation failed, size %zd", __func__,
-                  payload_size);
-            status = -ENOMEM;
-            goto exit;
-        }
         memcpy(local_event->phrase_extras,
             stc_ses->rc_config->phrases, stc_ses->rc_config->num_phrases *
             sizeof(struct sound_trigger_phrase_recognition_extra));
