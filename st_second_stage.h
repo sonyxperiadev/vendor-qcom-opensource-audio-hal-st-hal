@@ -4,7 +4,7 @@
  * abstraction represents a single st second stage session from the st session
  * perspective.
  *
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -70,6 +70,7 @@ typedef struct st_second_stage_info {
     unsigned int sample_rate;
     unsigned int bit_width;
     unsigned int channel_count;
+    unsigned int data_before_kw_start;
     unsigned int data_after_kw_end;
 }st_second_stage_info_t;
 

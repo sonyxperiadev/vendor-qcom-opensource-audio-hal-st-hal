@@ -187,6 +187,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_SS_SM_TYPE "sm_detection_type"
 #define ST_PARAM_KEY_SS_SM_ID "sm_id"
 #define ST_PARAM_KEY_SS_LIB "module_lib"
+#define ST_PARAM_KEY_SS_DATA_BEFORE_KW_START "data_before_kw_start"
 #define ST_PARAM_KEY_SS_DATA_AFTER_KW_END "data_after_kw_end"
 
 #define ST_BACKEND_PORT_NAME_MAX_SIZE 25
@@ -1677,6 +1678,14 @@ static int platform_stdev_set_ss_params
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_CHANNEL_COUNT);
         common_params->channel_count = value;
+    }
+
+    err = str_parms_get_int(parms, ST_PARAM_KEY_SS_DATA_BEFORE_KW_START, &value);
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_SS_DATA_BEFORE_KW_START);
+        common_params->data_before_kw_start = value;
+    } else {
+        common_params->data_before_kw_start = VOP_DATA_BEFORE_TRUE_KW_START_MS;
     }
 
     err = str_parms_get_int(parms, ST_PARAM_KEY_SS_DATA_AFTER_KW_END, &value);
