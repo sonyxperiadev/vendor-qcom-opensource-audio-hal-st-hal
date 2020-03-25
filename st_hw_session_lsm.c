@@ -771,8 +771,10 @@ static void adjust_ss_buff_end(st_hw_session_t *p_ses,
     }
 }
 
-void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
+static void *buffer_thread_loop(void *context)
 {
+    st_hw_session_lsm_t *p_lsm_ses =
+                                 (st_hw_session_lsm_t *)context;
     int status = 0;
     struct listnode *node = NULL, *tmp_node = NULL;
     st_arm_second_stage_t *st_sec_stage = NULL;
@@ -782,189 +784,236 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
     bool real_time_check = true;
     uint64_t frame_receive_time = 0, frame_send_time = 0;
     uint64_t frame_read_time = 0, buffering_start_time = 0;
+    st_hw_sess_event_t hw_sess_event = {0};
 
-    ST_DBG_DECLARE(FILE *fptr_drv = NULL; static int file_cnt = 0);
-    if (p_lsm_ses->common.stdev->enable_debug_dumps) {
-        ST_DBG_FILE_OPEN_WR(fptr_drv, ST_DEBUG_DUMP_LOCATION,
-                            "st_lab_drv_data_ape", "pcm", file_cnt++);
+    if (p_lsm_ses == NULL) {
+        ALOGE("%s: input is NULL, exiting", __func__);
+        return NULL;
     }
 
     pthread_mutex_lock(&p_lsm_ses->lock);
-    p_lsm_ses->lab_processing_active = true;
-    p_lsm_ses->unread_bytes = 0;
-    p_lsm_ses->bytes_written = 0;
-
-    st_buffer_reset(p_lsm_ses->common.buffer);
-
-    if (p_lsm_ses->common.enable_second_stage) {
-        if (p_lsm_ses->common.sthw_cfg.client_req_hist_buf) {
-            kw_duration_bytes =
-                convert_ms_to_bytes(
-                    p_lsm_ses->common.sthw_cfg.client_req_hist_buf,
-                    &p_lsm_ses->common.config);
-        } else {
-            kw_duration_bytes =
-                convert_ms_to_bytes(
-                    p_lsm_ses->common.vendor_uuid_info->kw_duration,
-                    &p_lsm_ses->common.config);
+    while (!p_lsm_ses->exit_buffer_thread) {
+        ALOGV("%s: waiting to start buffering", __func__);
+        pthread_cond_wait(&p_lsm_ses->cond, &p_lsm_ses->lock);
+        ALOGV("%s: done waiting to start buffering, exit = %d", __func__,
+            p_lsm_ses->exit_buffer_thread);
+        if (p_lsm_ses->exit_buffer_thread) {
+            pthread_mutex_unlock(&p_lsm_ses->lock);
+            return NULL;
         }
 
-        list_for_each_safe(node, tmp_node, p_lsm_ses->common.second_stage_list) {
-            st_sec_stage = node_to_item(node, st_arm_second_stage_t, list_node);
-            /*
-             * At the start of buffering, initialize the variables needed by the
-             * second stage sessions.
-             */
-            pthread_mutex_lock(&st_sec_stage->ss_session->lock);
-            /*
-             * In the generic detection event usecase, the start of the buffer
-             * sent to 2nd stage is determined by the 1st stage keyword start
-             * index. This index can have some error, so the start of the buffer
-             * is moved forward to ensure there are no resulting missed
-             * detections. Similarly, error tolerance is added to the end of the
-             * buffer for generic and non generic detection event usecases.
-             */
-            if (st_sec_stage->ss_info->sm_detection_type ==
-                ST_SM_TYPE_KEYWORD_DETECTION) {
-                cnn_prepend_bytes =
-                    convert_ms_to_bytes(
-                        p_lsm_ses->common.vendor_uuid_info->kw_start_tolerance,
-                        &p_lsm_ses->common.config);
-
-                if (p_lsm_ses->common.kw_start_idx > cnn_prepend_bytes) {
-                    st_sec_stage->ss_session->buf_start =
-                        p_lsm_ses->common.kw_start_idx - cnn_prepend_bytes;
-                } else {
-                    st_sec_stage->ss_session->buf_start = 0;
-                }
-
-                cnn_append_bytes =
-                    convert_ms_to_bytes(
-                        (p_lsm_ses->common.vendor_uuid_info->kw_end_tolerance +
-                         st_sec_stage->ss_info->data_after_kw_end),
-                        &p_lsm_ses->common.config);
-
-                if (p_lsm_ses->common.kw_end_idx < kw_duration_bytes) {
-                    st_sec_stage->ss_session->buf_end =
-                        p_lsm_ses->common.kw_end_idx + cnn_append_bytes;
-                } else {
-                    st_sec_stage->ss_session->buf_end = kw_duration_bytes +
-                        cnn_append_bytes;
-                }
-                /*
-                 * The first second-stage keyword buffer frame needs to contain
-                 * ((kwd_start_idx - kwd_start_tolerance) - kwd_end_idx) from
-                 * the first stage keyword.
-                 */
-                st_sec_stage->ss_session->buff_sz = (p_lsm_ses->common.kw_end_idx -
-                    st_sec_stage->ss_session->buf_start);
-                st_sec_stage->ss_session->lab_buf_sz = p_lsm_ses->lab_drv_buf_size;
-                st_sec_stage->ss_session->det_status = KEYWORD_DETECTION_PENDING;
-            } else if (st_sec_stage->ss_info->sm_detection_type ==
-                ST_SM_TYPE_USER_VERIFICATION) {
-                vop_prepend_bytes =
-                    convert_ms_to_bytes(
-                        st_sec_stage->ss_info->data_before_kw_start,
-                        &p_lsm_ses->common.config);
-
-                if (p_lsm_ses->common.kw_start_idx > vop_prepend_bytes) {
-                    st_sec_stage->ss_session->buf_start =
-                        p_lsm_ses->common.kw_start_idx - vop_prepend_bytes;
-                } else {
-                    st_sec_stage->ss_session->buf_start = 0;
-                }
-
-                vop_append_bytes =
-                    convert_ms_to_bytes(
-                        p_lsm_ses->common.vendor_uuid_info->kw_end_tolerance,
-                        &p_lsm_ses->common.config);
-
-                if ((p_lsm_ses->common.kw_end_idx + vop_append_bytes) <
-                    kw_duration_bytes) {
-                    st_sec_stage->ss_session->buf_end =
-                        p_lsm_ses->common.kw_end_idx + vop_append_bytes;
-                } else {
-                    st_sec_stage->ss_session->buf_end = kw_duration_bytes;
-                }
-
-                st_sec_stage->ss_session->buff_sz = (st_sec_stage->ss_session->buf_end -
-                    st_sec_stage->ss_session->buf_start);
-                st_sec_stage->ss_session->det_status = USER_VERIFICATION_PENDING;
-            }
-            st_sec_stage->ss_session->unread_bytes = 0;
-            st_sec_stage->ss_session->exit_buffering = false;
-            st_sec_stage->ss_session->bytes_processed = 0;
-            st_sec_stage->ss_session->start_processing = false;
-            st_sec_stage->ss_session->confidence_score = 0;
-            pthread_mutex_unlock(&st_sec_stage->ss_session->lock);
-        }
-
-        if (p_lsm_ses->common.enable_second_stage &&
-            !p_lsm_ses->common.sthw_cfg.client_req_hist_buf)
-            p_lsm_ses->move_client_ptr = true;
-        else
-            p_lsm_ses->move_client_ptr = false;
-    }
-
-    buffering_start_time = get_current_time_ns();
-
-    while (!p_lsm_ses->exit_lab_processing) {
-        ALOGVV("%s: pcm_read reading bytes=%d", __func__, p_lsm_ses->lab_drv_buf_size);
-        pthread_mutex_unlock(&p_lsm_ses->lock);
-        frame_send_time = get_current_time_ns();
-        ATRACE_ASYNC_BEGIN("sthal:lsm:ape: pcm_read",
-            p_lsm_ses->common.sm_handle);
-        status = pcm_read(p_lsm_ses->pcm, p_lsm_ses->lab_drv_buf, p_lsm_ses->lab_drv_buf_size);
-        ATRACE_ASYNC_END("sthal:lsm:ape: pcm_read",
-            p_lsm_ses->common.sm_handle);
-        pthread_mutex_lock(&p_lsm_ses->lock);
-        frame_receive_time = get_current_time_ns();
-
-        ALOGVV("%s: pcm_read done", __func__);
+        ST_DBG_DECLARE(FILE *fptr_drv = NULL; static int file_cnt = 0);
         if (p_lsm_ses->common.stdev->enable_debug_dumps) {
-            ST_DBG_FILE_WRITE(fptr_drv, p_lsm_ses->lab_drv_buf,
-                p_lsm_ses->lab_drv_buf_size);
+            ST_DBG_FILE_OPEN_WR(fptr_drv, ST_DEBUG_DUMP_LOCATION,
+                                "st_lab_drv_data_ape", "pcm", file_cnt++);
         }
+
+        ATRACE_BEGIN("sthal:lsm: buffer_thread_loop");
+
+        status = 0;
+        real_time_check = true;
+        p_lsm_ses->unread_bytes = 0;
+        p_lsm_ses->bytes_written = 0;
+
+        st_buffer_reset(p_lsm_ses->common.buffer);
+
+        if (p_lsm_ses->common.enable_second_stage) {
+            if (p_lsm_ses->common.sthw_cfg.client_req_hist_buf) {
+                kw_duration_bytes =
+                    convert_ms_to_bytes(
+                        p_lsm_ses->common.sthw_cfg.client_req_hist_buf,
+                        &p_lsm_ses->common.config);
+            } else {
+                kw_duration_bytes =
+                    convert_ms_to_bytes(
+                        p_lsm_ses->common.vendor_uuid_info->kw_duration,
+                        &p_lsm_ses->common.config);
+            }
+
+            list_for_each_safe(node, tmp_node,
+                p_lsm_ses->common.second_stage_list) {
+                st_sec_stage = node_to_item(node, st_arm_second_stage_t,
+                    list_node);
+                /*
+                 * At the start of buffering, initialize the variables needed
+                 * by the second stage sessions.
+                 */
+                pthread_mutex_lock(&st_sec_stage->ss_session->lock);
+                /*
+                 * In the generic detection event usecase, the start of the
+                 * buffer sent to 2nd stage is determined by the 1st stage
+                 * keyword start index. This index can have some error, so the
+                 * start of the buffer is moved forward to ensure there are no
+                 * resulting missed detections. Similarly, error tolerance is
+                 * added to the end of the buffer for generic and non generic
+                 * detection event usecases.
+                 */
+                if (st_sec_stage->ss_info->sm_detection_type ==
+                    ST_SM_TYPE_KEYWORD_DETECTION) {
+                    cnn_prepend_bytes =
+                        convert_ms_to_bytes(
+                            p_lsm_ses->common.vendor_uuid_info->kw_start_tolerance,
+                            &p_lsm_ses->common.config);
+
+                    if (p_lsm_ses->common.kw_start_idx > cnn_prepend_bytes) {
+                        st_sec_stage->ss_session->buf_start =
+                            p_lsm_ses->common.kw_start_idx - cnn_prepend_bytes;
+                    } else {
+                        st_sec_stage->ss_session->buf_start = 0;
+                    }
+
+                    cnn_append_bytes =
+                        convert_ms_to_bytes(
+                            (p_lsm_ses->common.vendor_uuid_info->kw_end_tolerance +
+                             st_sec_stage->ss_info->data_after_kw_end),
+                            &p_lsm_ses->common.config);
+
+                    if (p_lsm_ses->common.kw_end_idx < kw_duration_bytes) {
+                        st_sec_stage->ss_session->buf_end =
+                            p_lsm_ses->common.kw_end_idx + cnn_append_bytes;
+                    } else {
+                        st_sec_stage->ss_session->buf_end = kw_duration_bytes +
+                            cnn_append_bytes;
+                    }
+                    /*
+                     * The first second-stage keyword buffer frame needs to
+                     * contain ((kwd_start_idx - kwd_start_tolerance) -
+                     * kwd_end_idx) from the first stage keyword.
+                     */
+                    st_sec_stage->ss_session->buff_sz =
+                        (p_lsm_ses->common.kw_end_idx -
+                        st_sec_stage->ss_session->buf_start);
+                    st_sec_stage->ss_session->lab_buf_sz =
+                        p_lsm_ses->lab_drv_buf_size;
+                    st_sec_stage->ss_session->det_status =
+                        KEYWORD_DETECTION_PENDING;
+                } else if (st_sec_stage->ss_info->sm_detection_type ==
+                    ST_SM_TYPE_USER_VERIFICATION) {
+                    vop_prepend_bytes =
+                        convert_ms_to_bytes(
+                            st_sec_stage->ss_info->data_before_kw_start,
+                            &p_lsm_ses->common.config);
+
+                    if (p_lsm_ses->common.kw_start_idx > vop_prepend_bytes) {
+                        st_sec_stage->ss_session->buf_start =
+                            p_lsm_ses->common.kw_start_idx - vop_prepend_bytes;
+                    } else {
+                        st_sec_stage->ss_session->buf_start = 0;
+                    }
+
+                    vop_append_bytes =
+                        convert_ms_to_bytes(
+                            p_lsm_ses->common.vendor_uuid_info->kw_end_tolerance,
+                            &p_lsm_ses->common.config);
+
+                    if ((p_lsm_ses->common.kw_end_idx + vop_append_bytes) <
+                        kw_duration_bytes) {
+                        st_sec_stage->ss_session->buf_end =
+                            p_lsm_ses->common.kw_end_idx + vop_append_bytes;
+                    } else {
+                        st_sec_stage->ss_session->buf_end = kw_duration_bytes;
+                    }
+
+                    st_sec_stage->ss_session->buff_sz =
+                        (st_sec_stage->ss_session->buf_end -
+                        st_sec_stage->ss_session->buf_start);
+                    st_sec_stage->ss_session->det_status =
+                        USER_VERIFICATION_PENDING;
+                }
+                st_sec_stage->ss_session->unread_bytes = 0;
+                st_sec_stage->ss_session->exit_buffering = false;
+                st_sec_stage->ss_session->bytes_processed = 0;
+                st_sec_stage->ss_session->start_processing = false;
+                st_sec_stage->ss_session->confidence_score = 0;
+                pthread_mutex_unlock(&st_sec_stage->ss_session->lock);
+            }
+
+            if (p_lsm_ses->common.enable_second_stage &&
+                !p_lsm_ses->common.sthw_cfg.client_req_hist_buf)
+                p_lsm_ses->move_client_ptr = true;
+            else
+                p_lsm_ses->move_client_ptr = false;
+        }
+
+        buffering_start_time = get_current_time_ns();
+
+        while (!p_lsm_ses->exit_lab_processing) {
+            ALOGVV("%s: pcm_read reading bytes=%d", __func__,
+                p_lsm_ses->lab_drv_buf_size);
+            pthread_mutex_unlock(&p_lsm_ses->lock);
+            frame_send_time = get_current_time_ns();
+            ATRACE_ASYNC_BEGIN("sthal:lsm:ape: pcm_read",
+                p_lsm_ses->common.sm_handle);
+            status = pcm_read(p_lsm_ses->pcm, p_lsm_ses->lab_drv_buf,
+                p_lsm_ses->lab_drv_buf_size);
+            ATRACE_ASYNC_END("sthal:lsm:ape: pcm_read",
+                p_lsm_ses->common.sm_handle);
+            pthread_mutex_lock(&p_lsm_ses->lock);
+            frame_receive_time = get_current_time_ns();
+
+            ALOGVV("%s: pcm_read done", __func__);
+            if (p_lsm_ses->common.stdev->enable_debug_dumps) {
+                ST_DBG_FILE_WRITE(fptr_drv, p_lsm_ses->lab_drv_buf,
+                    p_lsm_ses->lab_drv_buf_size);
+            }
+
+            if (status) {
+                ALOGE("%s: pcm read failed status %d - %s", __func__, status,
+                      pcm_get_error(p_lsm_ses->pcm));
+                pcm_stop(p_lsm_ses->pcm);
+                pcm_start(p_lsm_ses->pcm);
+                break;
+            }
+
+            status = write_pcm_data_ape(p_lsm_ses, p_lsm_ses->lab_drv_buf,
+                p_lsm_ses->lab_drv_buf_size);
+            if (status) {
+                ALOGE("%s: Failed to write to circ buff, status %d", __func__,
+                    status);
+                break;
+            }
+            frame_read_time = frame_receive_time - frame_send_time;
+            if (real_time_check &&
+                (frame_read_time > APE_MAX_LAB_FTRT_FRAME_RD_TIME_NS)) {
+                uint32_t ftrt_bytes_written_ms =
+                    convert_bytes_to_ms(p_lsm_ses->bytes_written -
+                        p_lsm_ses->lab_drv_buf_size, &p_lsm_ses->common.config);
+
+                ALOGD("%s: FTRT data transfer: %dms of data received in %llums",
+                    __func__, ftrt_bytes_written_ms, ((frame_send_time -
+                        buffering_start_time) / NSECS_PER_MSEC));
+
+                if (p_lsm_ses->common.enable_second_stage &&
+                    !p_lsm_ses->common.is_generic_event) {
+                    ALOGD("%s: First real time frame took %llums", __func__,
+                        (frame_read_time / NSECS_PER_MSEC));
+                    adjust_ss_buff_end(&p_lsm_ses->common, cnn_append_bytes,
+                        vop_append_bytes);
+                }
+                real_time_check = false;
+            }
+        }
+        ALOGV("%s: Exited buffering, status=%d", __func__, status);
+        ape_stop_buffering(&p_lsm_ses->common);
+        p_lsm_ses->lab_on_detection = false;
+        p_lsm_ses->lab_processing_active = false;
+        pthread_cond_broadcast(&p_lsm_ses->cond);
+        if (p_lsm_ses->common.stdev->enable_debug_dumps)
+            ST_DBG_FILE_CLOSE(fptr_drv);
+        ATRACE_END();
 
         if (status) {
-            ALOGE("%s: pcm read failed status %d - %s", __func__, status,
-                  pcm_get_error(p_lsm_ses->pcm));
-            pcm_stop(p_lsm_ses->pcm);
-            pcm_start(p_lsm_ses->pcm);
-            break;
-        }
-
-        write_pcm_data_ape(p_lsm_ses, p_lsm_ses->lab_drv_buf, p_lsm_ses->lab_drv_buf_size);
-        frame_read_time = frame_receive_time - frame_send_time;
-        if (real_time_check &&
-            (frame_read_time > APE_MAX_LAB_FTRT_FRAME_RD_TIME_NS)) {
-            uint32_t ftrt_bytes_written_ms =
-                convert_bytes_to_ms(p_lsm_ses->bytes_written -
-                    p_lsm_ses->lab_drv_buf_size, &p_lsm_ses->common.config);
-
-            ALOGD("%s: FTRT data transfer: %dms of data received in %llums",
-                __func__, ftrt_bytes_written_ms, ((frame_send_time -
-                    buffering_start_time) / NSECS_PER_MSEC));
-
-            if (p_lsm_ses->common.enable_second_stage && !p_lsm_ses->common.is_generic_event) {
-                ALOGD("%s: First real time frame took %llums", __func__,
-                    (frame_read_time / NSECS_PER_MSEC));
-                adjust_ss_buff_end(&p_lsm_ses->common, cnn_append_bytes,
-                    vop_append_bytes);
-            }
-            real_time_check = false;
+            hw_sess_event.event_id = ST_HW_SESS_EVENT_BUFFERING_STOPPED;
+            pthread_mutex_unlock(&p_lsm_ses->lock);
+            p_lsm_ses->common.callback_to_st_session(&hw_sess_event,
+                p_lsm_ses->common.cookie);
+            pthread_mutex_lock(&p_lsm_ses->lock);
         }
     }
-
-    ape_stop_buffering(&p_lsm_ses->common);
-    p_lsm_ses->lab_on_detection = false;
-    p_lsm_ses->lab_processing_active = false;
-    pthread_cond_broadcast(&p_lsm_ses->cond);
     pthread_mutex_unlock(&p_lsm_ses->lock);
-    if (p_lsm_ses->common.stdev->enable_debug_dumps)
-        ST_DBG_FILE_CLOSE(fptr_drv);
-    ALOGVV("%s: Exit status=%d", __func__, status);
+    return NULL;
 }
+
 
 static void *callback_thread_loop(void *context)
 {
@@ -1127,6 +1176,12 @@ static int deallocate_lab_buffers_ape(st_hw_session_lsm_t* p_ses)
     }
     p_ses->lab_buffers_allocated = false;
 
+    p_ses->exit_buffer_thread = true;
+    pthread_mutex_lock(&p_ses->lock);
+    pthread_cond_signal(&p_ses->cond);
+    pthread_mutex_unlock(&p_ses->lock);
+    pthread_join(p_ses->buffer_thread, NULL);
+
     return 0;
 }
 
@@ -1135,6 +1190,7 @@ static int allocate_lab_buffers_ape(st_hw_session_lsm_t* p_lsm_ses)
     int status = 0, circ_buff_sz = 0;
     struct st_vendor_info *v_info = p_lsm_ses->common.vendor_uuid_info;
     unsigned int rt_bytes_one_sec;
+    pthread_attr_t attr;
 
     p_lsm_ses->lab_drv_buf_size = pcm_frames_to_bytes(p_lsm_ses->pcm,
         p_lsm_ses->common.config.period_size);
@@ -1171,6 +1227,12 @@ static int allocate_lab_buffers_ape(st_hw_session_lsm_t* p_lsm_ses)
 
     ALOGV("%s: Allocated out buffer size=%d", __func__, circ_buff_sz);
     p_lsm_ses->lab_buffers_allocated = true;
+
+    p_lsm_ses->exit_buffer_thread = false;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+    pthread_create(&p_lsm_ses->buffer_thread, &attr,
+        buffer_thread_loop, p_lsm_ses);
 
     return status;
 
@@ -2392,9 +2454,10 @@ static void route_audio_capture_ape(st_hw_session_t *p_ses)
 {
     st_hw_session_lsm_t *p_lsm_ses = (st_hw_session_lsm_t *)p_ses;
 
-    ATRACE_BEGIN("sthal:lsm: process_raw_lab_data_ape");
-    process_raw_lab_data_ape(p_lsm_ses);
-    ATRACE_END();
+    pthread_mutex_lock(&p_lsm_ses->lock);
+    p_lsm_ses->lab_processing_active = true;
+    pthread_cond_signal(&p_lsm_ses->cond);
+    pthread_mutex_unlock(&p_lsm_ses->lock);
 }
 
 int route_send_custom_chmix_coeff_ape(st_hw_session_t *p_ses, char *str)

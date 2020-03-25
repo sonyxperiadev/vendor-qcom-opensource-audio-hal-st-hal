@@ -124,6 +124,9 @@ struct st_hw_session_lsm {
     pthread_t callback_thread;
     bool exit_callback_thread;
 
+    pthread_t buffer_thread;
+    bool exit_buffer_thread;
+
     int pcm_id;
     struct pcm *pcm;
     struct pcm_config  lab_config;
