@@ -4,7 +4,7 @@
  * user session. This state machine implements logic for handling all user
  * interactions, detectinos, SSR and Audio Concurencies.
  *
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -2512,6 +2512,7 @@ static int start_hw_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses,
         hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
         hw_ses->barge_in_mode = hw_ses->stdev->barge_in_mode;
         do_unload = true;
+        platform_stdev_reset_backend_cfg(hw_ses->stdev->platform);
     }
 
     /*
@@ -3298,13 +3299,6 @@ int process_detection_event_keyphrase_v2(
             }
         }
     } else {
-        local_event = calloc(1, sizeof(*local_event) + payload_size);
-        if (!local_event) {
-            ALOGE("%s: event allocation failed, size %zd", __func__,
-                  payload_size);
-            status = -ENOMEM;
-            goto exit;
-        }
         memcpy(local_event->phrase_extras,
             stc_ses->rc_config->phrases, stc_ses->rc_config->num_phrases *
             sizeof(struct sound_trigger_phrase_recognition_extra));

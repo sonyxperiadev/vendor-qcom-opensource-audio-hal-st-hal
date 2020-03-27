@@ -824,8 +824,10 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
             } else {
                 ALOGV("%s: Ignore capture events as sva has dedicated path", __func__);
             }
-            pthread_mutex_unlock(&stdev->lock);
-            return;
+            if (!conc_allowed) {
+                pthread_mutex_unlock(&stdev->lock);
+                return;
+            }
         }
     } else {
         /*
@@ -842,8 +844,6 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
                 p_ses = node_to_item(p_ses_node, st_session_t, list_node);
                 st_session_pause(p_ses);
             }
-            pthread_mutex_unlock(&stdev->lock);
-            return;
         } else {
             if (event_type == AUDIO_EVENT_CAPTURE_DEVICE_INACTIVE) {
                 list_for_each(p_ses_node, &stdev->sound_model_list) {
@@ -863,6 +863,10 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
             }
         }
         stdev->session_allowed = conc_allowed;
+        if (!conc_allowed) {
+            pthread_mutex_unlock(&stdev->lock);
+            return;
+        }
     }
 
     /*
@@ -904,8 +908,6 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
                     st_session_pause(p_ses);
                 }
             }
-
-            platform_stdev_reset_backend_cfg(stdev->platform);
 
             list_for_each(p_ses_node, &stdev->sound_model_list) {
                 p_ses = node_to_item(p_ses_node, st_session_t, list_node);
@@ -1113,6 +1115,7 @@ static void handle_device_switch(bool connect, audio_event_info_t* config)
      * state so device switch will set up the next session with the
      * new device to be started later
      */
+    stdev->reset_backend = true;
     switch_device();
 
     pthread_mutex_unlock(&stdev->lock);
@@ -1139,7 +1142,7 @@ static void handle_screen_status_change(audio_event_info_t* config)
     st_hw_check_and_update_lpi(stdev, p_ses);
 
     if (stdev->lpi_enable != platform_get_lpi_mode(stdev->platform) &&
-        !is_any_session_buffering()) {
+        !is_any_session_buffering() && stdev->session_allowed) {
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
             if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
@@ -1148,8 +1151,6 @@ static void handle_screen_status_change(audio_event_info_t* config)
                 st_session_pause(p_ses);
             }
         }
-
-        platform_stdev_reset_backend_cfg(stdev->platform);
 
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
@@ -1192,7 +1193,7 @@ static void handle_battery_status_change(audio_event_info_t* config)
     stdev->vad_enable = st_hw_check_vad_support(stdev, p_ses,
         stdev->lpi_enable);
     if (stdev->lpi_enable != platform_get_lpi_mode(stdev->platform) &&
-        !is_any_session_buffering() &&
+        !is_any_session_buffering() && stdev->session_allowed &&
         stdev->transit_to_non_lpi_on_battery_charging) {
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
@@ -1202,8 +1203,6 @@ static void handle_battery_status_change(audio_event_info_t* config)
                 st_session_pause(p_ses);
             }
         }
-
-        platform_stdev_reset_backend_cfg(stdev->platform);
 
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
