@@ -57,24 +57,21 @@
 
 static int reg_sm(st_hw_session_t *p_ses,
     void *sm_data, unsigned int sm_size,
-    sound_trigger_sound_model_type_t sm_type);
+    uint32_t model_id);
 static int reg_sm_params(st_hw_session_t *p_ses,
     unsigned int recognition_mode,
     bool capture_requested,
-    struct sound_trigger_recognition_config *rc_config,
-    sound_trigger_sound_model_type_t sm_type,
-    void *sm_data);
+    struct sound_trigger_recognition_config *rc_config);
 static int read_pcm(st_hw_session_t *p_ses,
     unsigned char *buf,
     unsigned int bytes);
 static void process_lab_capture(st_hw_session_t *p_ses);
-static int dereg_sm(st_hw_session_t *p_ses);
+static int dereg_sm(st_hw_session_t *p_ses, uint32_t model_id __unused);
 static int dereg_sm_params(st_hw_session_t *p_ses);
 static int start(st_hw_session_t *p_ses);
 static int restart(st_hw_session_t *p_ses,
     unsigned int recognition_mode,
-    struct sound_trigger_recognition_config *rc_config __unused,
-    sound_trigger_sound_model_type_t sm_type, void *sm_data);
+    struct sound_trigger_recognition_config *rc_config __unused);
 static int stop(st_hw_session_t *p_ses);
 static int stop_buffering(st_hw_session_t *p_ses);
 static int set_device(st_hw_session_t *p_ses,
@@ -509,7 +506,7 @@ exit:
 }
 
 static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
-    unsigned int sm_size, sound_trigger_sound_model_type_t sm_type __unused)
+    unsigned int sm_size, uint32_t model_id __unused)
 {
     int status = 0;
     uint8_t *load_sm_msg = NULL;
@@ -676,9 +673,7 @@ cleanup2:
 static int reg_sm_params(st_hw_session_t *p_ses,
     unsigned int recognition_mode,
     bool capture_requested,
-    struct sound_trigger_recognition_config *rc_config,
-    sound_trigger_sound_model_type_t sm_type __unused,
-    void *sm_data __unused)
+    struct sound_trigger_recognition_config *rc_config)
 {
     st_hw_session_gcs_t *p_hw_ses = (st_hw_session_gcs_t *)p_ses;
     uint8_t *msg_offset = NULL;
@@ -692,6 +687,8 @@ static int reg_sm_params(st_hw_session_t *p_ses,
     struct gcs_det_engine_start_custom_config *stcfg_msg = NULL;
     struct gcs_det_event_type_custom_config *det_event_msg = NULL;
     struct st_vendor_info *v_info = p_ses->vendor_uuid_info;
+    struct listnode *node = NULL;
+    struct st_hw_ses_config *sthw_cfg = NULL;
     bool disable_custom_config = false;
 
     if (NULL != p_hw_ses->nonpersistent_cal) {
@@ -717,13 +714,22 @@ static int reg_sm_params(st_hw_session_t *p_ses,
      * it is, and it is assumed that it is formatted from within.
      */
 
+    if (!list_empty(&p_ses->sthw_cfg_list)) {
+        node = list_head(&p_ses->sthw_cfg_list);
+        sthw_cfg = node_to_item(node, struct st_hw_ses_config,
+            sthw_cfg_list_node);
+    } else {
+        ALOGE("%s: Unexpected, sthw_cfg list is empty", __func__);
+        return -EINVAL;
+    }
+
     if ((rc_config->data_size > CUSTOM_CONFIG_OPAQUE_DATA_SIZE) &&
         v_info->is_qcva_uuid) {
         if (!capture_requested)
             disable_custom_config = true;
 
         det_config_size = sizeof(struct gcs_det_engine_config_param) +
-                          p_ses->sthw_cfg.num_conf_levels;
+                          sthw_cfg->num_conf_levels;
         det_config_size = ALIGN(det_config_size, 4);
         p_hw_ses->nonpersistent_cal_size += det_config_size;
 
@@ -749,7 +755,7 @@ static int reg_sm_params(st_hw_session_t *p_ses,
 
         if (v_info->is_qcva_uuid || v_info->is_qcmd_uuid) {
             det_config_size = sizeof(struct gcs_det_engine_config_param) +
-                              p_ses->sthw_cfg.num_conf_levels;
+                              sthw_cfg->num_conf_levels;
             /* If not using custom config param, send opaque data as part of
              * DETECTION_ENGINE_CONFIG. Opaque data will be put after confidence
              * level payload data.
@@ -830,20 +836,20 @@ static int reg_sm_params(st_hw_session_t *p_ses,
             }
 
             msg_offset += sizeof(struct gcs_det_engine_config_param);
-            if (p_ses->sthw_cfg.conf_levels) {
-                memcpy(msg_offset, (uint8_t *)p_ses->sthw_cfg.conf_levels,
-                    p_ses->sthw_cfg.num_conf_levels);
-                msg_offset += p_ses->sthw_cfg.num_conf_levels;
-                p_msg->custom_payload_sz = p_ses->sthw_cfg.num_conf_levels;
+            if (sthw_cfg->conf_levels) {
+                memcpy(msg_offset, (uint8_t *)sthw_cfg->conf_levels,
+                    sthw_cfg->num_conf_levels);
+                msg_offset += sthw_cfg->num_conf_levels;
+                p_msg->custom_payload_sz = sthw_cfg->num_conf_levels;
                 /*
                  * The detection_engine_config struct has 2 bytes for minor
                  * version and num_active_models before the confidence levels.
                  * There is also 1 byte added for each confidence level as an
                  * enable/disable flag.
                  */
-                for (i = 0; i < (p_ses->sthw_cfg.num_conf_levels - 2) / 2; i++) {
+                for (i = 0; i < (sthw_cfg->num_conf_levels - 2) / 2; i++) {
                     ALOGD("%s: First stage conf_levels[%d] = %d",
-                        __func__, i, *(p_ses->sthw_cfg.conf_levels + 2 + i));
+                        __func__, i, *(sthw_cfg->conf_levels + 2 + i));
                 }
             }
         }
@@ -992,7 +998,7 @@ err_exit:
     return status;
 }
 
-static int dereg_sm(st_hw_session_t *p_ses)
+static int dereg_sm(st_hw_session_t *p_ses, uint32_t model_id __unused)
 {
     int status = 0, rc = 0;
     st_hw_session_gcs_t *p_gcs_ses = (st_hw_session_gcs_t *)p_ses;
@@ -1096,8 +1102,7 @@ static int start(st_hw_session_t *p_ses)
 
 static int restart(st_hw_session_t *p_ses,
     unsigned int recognition_mode __unused,
-    struct sound_trigger_recognition_config *rc_config,
-    sound_trigger_sound_model_type_t sm_type, void *sm_data)
+    struct sound_trigger_recognition_config *rc_config)
 {
     st_hw_session_gcs_t *p_gcs_ses = (st_hw_session_gcs_t *)p_ses;
     struct graphite_cal_header restart_cfg;
@@ -1139,7 +1144,7 @@ static int restart(st_hw_session_t *p_ses,
         }
 
         status = reg_sm_params(p_ses, recognition_mode, p_ses->lab_enabled,
-            rc_config, sm_type, sm_data);
+            rc_config);
         if (status) {
             ALOGE("%s: failed to reg_sm_params err %d", __func__, status);
             goto exit;
@@ -1521,9 +1526,9 @@ static void process_lab_capture(st_hw_session_t *p_ses)
         prepend_bytes =
             convert_ms_to_bytes(p_ses->vendor_uuid_info->kw_start_tolerance,
                 &p_ses->config);
-        if (p_ses->sthw_cfg.client_req_hist_buf) {
+        if (p_ses->max_hist_buf) {
             kw_duration_bytes =
-                convert_ms_to_bytes(p_ses->sthw_cfg.client_req_hist_buf, &p_ses->config);
+                convert_ms_to_bytes(p_ses->max_hist_buf, &p_ses->config);
         } else {
             kw_duration_bytes =
                 convert_ms_to_bytes(p_ses->vendor_uuid_info->kw_duration,
@@ -1592,7 +1597,7 @@ static void process_lab_capture(st_hw_session_t *p_ses)
             pthread_mutex_unlock(&st_sec_stage->ss_session->lock);
         }
 
-        if (p_ses->enable_second_stage && !p_ses->sthw_cfg.client_req_hist_buf)
+        if (p_ses->enable_second_stage && !p_ses->max_hist_buf)
             p_hw_ses->move_client_ptr = true;
         else
             p_hw_ses->move_client_ptr = false;

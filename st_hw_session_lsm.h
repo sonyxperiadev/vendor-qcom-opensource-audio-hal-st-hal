@@ -31,6 +31,7 @@
 #include <tinyalsa/asoundlib.h>
 #include <audio_route/audio_route.h>
 #include <sound/lsm_params.h>
+#include <sound/asound.h>
 
 #include "sound_trigger_platform.h"
 #include "st_hw_session.h"
@@ -40,8 +41,12 @@ struct sound_trigger_device;
 
 #define SOUND_TRIGGER_MAX_EVNT_PAYLOAD_SIZE (256)
 
-/* Add extra to accomodate multiple LSM_CUSTOM_PARAMS */
-#define LSM_SM_PARAMS_INFO_MAX (LSM_PARAMS_MAX + 4)
+/*
+ * Add extra to accomodate multiple LSM_CUSTOM_PARAMS and also
+ * multiple LSM_MULTI_SND_MODEL_CONFIDENCE_LEVELS params for
+ * multi SM usecase.
+ */
+#define LSM_SM_PARAMS_INFO_MAX (LSM_PARAMS_MAX * 2)
 
 #define SOUND_TRIGGER_PCM_MAX_RETRY (10)
 #define SOUND_TRIGGER_PCM_SLEEP_WAIT (1000)
@@ -66,6 +71,9 @@ struct sound_trigger_device;
 #define LSM_ABORT_RETRY_COUNT (5)
 #define LSM_ABORT_WAIT_TIMEOUT_NS (30 * NSECS_PER_MSEC)
 
+#define MAX_MULTI_SOUND_MODELS (8)
+#define MAX_MULTI_SM_CONF_LEVELS (8)
+
 #ifdef LSM_EVENT_TIMESTAMP_MODE_SUPPORT
   typedef struct snd_lsm_event_status_v3 st_lsm_event_status_t;
 #else
@@ -84,8 +92,35 @@ struct sound_trigger_device;
   typedef void* st_lsm_det_event_type_t;
 #endif
 
-#define ACD_CONFIDENCE_LEVELS_BIT (1 << 0)
-#define ACD_TIME_STAMP_INFO_BIT (1 << 1)
+struct multi_sm_conf_levels {
+    uint32_t model_id;
+    uint32_t num_conf_levels;
+    uint32_t conf_levels[MAX_MULTI_SM_CONF_LEVELS];
+};
+
+struct multi_sm_reg_sm {
+    uint32_t model_id;
+    uint32_t model_size;
+};
+
+#if (SNDRV_LSM_VERSION >= SNDRV_PROTOCOL_VERSION(0, 3, 2))
+#define LSM_MULTI_SM_SUPPORT (1)
+#else
+#define LSM_MULTI_SM_SUPPORT (0)
+#endif
+
+#ifdef LSM_MULTI_SM_SUPPORT
+  typedef struct multi_sm_reg_sm st_lsm_reg_sm_header_t;
+  typedef struct multi_sm_conf_levels st_lsm_conf_levels_t;
+#else
+  typedef void* st_lsm_reg_sm_header_t;
+  typedef void* st_lsm_conf_levels_t;
+#endif
+
+#define DET_EVENT_CONFIDENCE_LEVELS_BIT (1 << 0)
+#define DET_EVENT_KEYWORD_INDEX_BIT (1 << 1)
+#define DET_EVENT_TIMESTAMP_INFO_BIT (1 << 2)
+#define DET_EVENT_MULTI_MODEL_RESULT_INFO_BIT (1 << 4)
 
 struct lsm_param_smm_th_config {
     uint32_t minor_version;

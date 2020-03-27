@@ -1802,8 +1802,9 @@ exit:
  * This function finds the first stage sound model raw data size and offset, and sets
  * the sound_trigger_sound_model payload size and offset to these values.
  */
-static int get_gmm_model(struct sound_trigger_sound_model **common_sm,
-                                       uint8_t *sm_payload, uint32_t num_models)
+static int get_first_stage_model(struct sound_trigger_sound_model **common_sm,
+                         uint8_t *sm_payload, uint32_t num_models,
+                         st_module_type_t *sm_version)
 {
     SML_BigSoundModelTypeV3 *big_sm = NULL;
     uint32_t i = 0;
@@ -1813,6 +1814,10 @@ static int get_gmm_model(struct sound_trigger_sound_model **common_sm,
         big_sm = (SML_BigSoundModelTypeV3 *)(sm_payload + sizeof(SML_GlobalHeaderType) +
             sizeof(SML_HeaderTypeV3) + (i * sizeof(SML_BigSoundModelTypeV3)));
         if (big_sm->type == ST_SM_ID_SVA_GMM) {
+            if (big_sm->versionMajor == ST_MODULE_TYPE_PDK5)
+                *sm_version = ST_MODULE_TYPE_PDK5;
+            else
+                *sm_version = ST_MODULE_TYPE_GMM;
             (*common_sm)->data_size = big_sm->size;
             (*common_sm)->data_offset += sizeof(SML_GlobalHeaderType) + sizeof(SML_HeaderTypeV3) +
                 (num_models * sizeof(SML_BigSoundModelTypeV3)) + big_sm->offset;
@@ -1875,7 +1880,8 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
     uint8_t *sm_payload;
     SML_GlobalHeaderType *global_hdr;
     SML_HeaderTypeV3 *hdr_v3;
-    uint32_t num_models = 0, sm_version = SML_MODEL_V2;
+    uint32_t num_models = 0, sml_version = SML_MODEL_V2;
+    st_module_type_t sm_version = ST_MODULE_TYPE_GMM;
     struct listnode *node = NULL, *tmp_node = NULL;
     struct st_arm_second_stage *st_sec_stage = NULL;
 
@@ -1936,10 +1942,10 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
         sm_payload = (uint8_t *)common_sm + common_sm->data_offset;
         global_hdr = (SML_GlobalHeaderType *)sm_payload;
         if (global_hdr->magicNumber == SML_GLOBAL_HEADER_MAGIC_NUMBER) {
-            sm_version = SML_MODEL_V3;
+            sml_version = SML_MODEL_V3;
             hdr_v3 = (SML_HeaderTypeV3 *)(sm_payload + sizeof(SML_GlobalHeaderType));
             num_models = hdr_v3->numModels;
-            status = get_gmm_model(&common_sm, sm_payload, num_models);
+            status = get_first_stage_model(&common_sm, sm_payload, num_models, &sm_version);
             if (status) {
                 ALOGE("%s: Failed to set the first stage sound modle offset and size",
                     __func__);
@@ -1971,6 +1977,8 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
         goto exit;
     }
     list_init(&st_session->second_stage_list);
+
+    st_session->f_stage_version = sm_version;
 
     /* CPE takes time to become online, so parse for the pcm devices
        here instead during boot time */
@@ -2011,7 +2019,7 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
      * Parse second stage sound models and populate the second stage list for
      * this session.
      */
-    if (sm_version == SML_MODEL_V3) {
+    if (sml_version == SML_MODEL_V3) {
         status = check_and_configure_second_stage_models(st_session, sm_payload,
             num_models, phrase_sm->phrases[0].recognition_mode);
         if (status) {
