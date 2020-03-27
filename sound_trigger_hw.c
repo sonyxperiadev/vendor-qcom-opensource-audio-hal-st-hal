@@ -839,7 +839,7 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
          *       by audio capture usecase, so need to do session pause->resume
          *       to resume tx path.
          */
-        if (!conc_allowed && stdev->session_allowed) {
+        if (!conc_allowed) {
             list_for_each(p_ses_node, &stdev->sound_model_list) {
                 p_ses = node_to_item(p_ses_node, st_session_t, list_node);
                 st_session_pause(p_ses);
