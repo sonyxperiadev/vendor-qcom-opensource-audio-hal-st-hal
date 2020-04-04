@@ -4,7 +4,7 @@
  * user session. This state machine implements logic for handling all user
  * interactions, detectinos, SSR and Audio Concurencies.
  *
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -2512,6 +2512,7 @@ static int start_hw_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses,
         hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
         hw_ses->barge_in_mode = hw_ses->stdev->barge_in_mode;
         do_unload = true;
+        platform_stdev_reset_backend_cfg(hw_ses->stdev->platform);
     }
 
     /*
@@ -3298,13 +3299,6 @@ int process_detection_event_keyphrase_v2(
             }
         }
     } else {
-        local_event = calloc(1, sizeof(*local_event) + payload_size);
-        if (!local_event) {
-            ALOGE("%s: event allocation failed, size %zd", __func__,
-                  payload_size);
-            status = -ENOMEM;
-            goto exit;
-        }
         memcpy(local_event->phrase_extras,
             stc_ses->rc_config->phrases, stc_ses->rc_config->num_phrases *
             sizeof(struct sound_trigger_phrase_recognition_extra));
@@ -4807,18 +4801,34 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
                  * Note: It is possible that detection event is not sent to
                  * client if second stage is not yet detected during internal
                  * buffering stop, in which case restart is posted from second
-                 * stage thread for further detections.
+                 * stage thread for further detections. Only if the second
+                 * stage detection hasn't be started due to internal buffering
+                 * stop too early, restart session should be explictily issued.
                  */
-                if ((st_ses->current_state == buffering_state_fn) &&
-                    !stc_ses->pending_stop && stc_ses->detection_sent) {
-                    ALOGD("%s:[%d] buffering stopped internally, post c%d stop",
-                        __func__, st_ses->sm_handle,
-                        st_ses->det_stc_ses->sm_handle);
-                    status = hw_session_notifier_enqueue(stc_ses->sm_handle,
-                        ST_SES_EV_DEFERRED_STOP,
-                        ST_SES_DEFERRED_STOP_SS_DELAY_MS);
-                    if (!status)
-                        stc_ses->pending_stop = true;
+                if (st_ses->current_state == buffering_state_fn) {
+                    if (stc_ses->detection_sent) {
+                        if (!stc_ses->pending_stop) {
+                            ALOGD("%s:[%d] buffering stopped internally, post c%d stop",
+                                __func__, st_ses->sm_handle,
+                                st_ses->det_stc_ses->sm_handle);
+                            status = hw_session_notifier_enqueue(stc_ses->sm_handle,
+                                ST_SES_EV_DEFERRED_STOP,
+                                ST_SES_DEFERRED_STOP_SS_DELAY_MS);
+                            if (!status)
+                                stc_ses->pending_stop = true;
+                        }
+                    } else {
+                        list_for_each(node, &stc_ses->second_stage_list) {
+                            st_sec_stage = node_to_item(node, st_arm_second_stage_t,
+                                                        list_node);
+                            if (!st_sec_stage->ss_session->start_processing) {
+                                st_session_ev_t ev = {.ev_id = ST_SES_EV_RESTART,
+                                                      .stc_ses = stc_ses};
+                                DISPATCH_EVENT(st_ses, ev, status);
+                                break;
+                            }
+                        }
+                    }
                 }
                 pthread_mutex_unlock(&st_ses->lock);
             }

@@ -187,6 +187,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_SS_SM_TYPE "sm_detection_type"
 #define ST_PARAM_KEY_SS_SM_ID "sm_id"
 #define ST_PARAM_KEY_SS_LIB "module_lib"
+#define ST_PARAM_KEY_SS_DATA_BEFORE_KW_START "data_before_kw_start"
 #define ST_PARAM_KEY_SS_DATA_AFTER_KW_END "data_after_kw_end"
 
 #define ST_BACKEND_PORT_NAME_MAX_SIZE 25
@@ -742,6 +743,7 @@ static void platform_stdev_set_default_config(struct platform_data *platform)
     stdev->platform_lpi_enable = ST_PLATFORM_LPI_NONE;
     stdev->screen_off = true;
     stdev->support_dynamic_ec_update = true;
+    stdev->ec_reset_pending_cnt = 0;
 
     platform->cpe_fe_to_be_fixed = true;
     platform->bad_mic_channel_index = 0;
@@ -1677,6 +1679,14 @@ static int platform_stdev_set_ss_params
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_CHANNEL_COUNT);
         common_params->channel_count = value;
+    }
+
+    err = str_parms_get_int(parms, ST_PARAM_KEY_SS_DATA_BEFORE_KW_START, &value);
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_SS_DATA_BEFORE_KW_START);
+        common_params->data_before_kw_start = value;
+    } else {
+        common_params->data_before_kw_start = VOP_DATA_BEFORE_TRUE_KW_START_MS;
     }
 
     err = str_parms_get_int(parms, ST_PARAM_KEY_SS_DATA_AFTER_KW_END, &value);
@@ -5681,6 +5691,12 @@ void platform_stdev_send_ec_ref_cfg
 
     if (is_ec_profile(profile_type)) {
         event_info.st_ec_ref_enabled = enable;
+        // reset the pending active EC mixer ctls first
+        if (!stdev->audio_ec_enabled && stdev->ec_reset_pending_cnt > 0) {
+            while (stdev->ec_reset_pending_cnt--)
+                audio_route_reset_and_update_path(stdev->audio_route,
+                        my_data->ec_ref_mixer_path);
+        }
         if (enable) {
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);
             strlcpy(my_data->ec_ref_mixer_path, "echo-reference",
@@ -5701,6 +5717,7 @@ void platform_stdev_send_ec_ref_cfg
                 audio_route_reset_and_update_path(stdev->audio_route,
                         my_data->ec_ref_mixer_path);
             } else {
+                stdev->ec_reset_pending_cnt++;
                 ALOGD("%s: audio hal has already enabled EC", __func__);
             }
         }
