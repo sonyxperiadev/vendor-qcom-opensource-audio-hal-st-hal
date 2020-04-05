@@ -1395,7 +1395,8 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
     int status = 0;
     struct listnode *node = NULL, *tmp_node = NULL;
     st_arm_second_stage_t *st_sec_stage = NULL;
-    unsigned int prepend_bytes = 0, cnn_append_bytes = 0, vop_append_bytes = 0;
+    unsigned int cnn_prepend_bytes = 0, vop_prepend_bytes = 0;
+    unsigned int cnn_append_bytes = 0, vop_append_bytes = 0;
     unsigned int kw_duration_bytes = 0;
     bool real_time_check = true;
     uint64_t frame_receive_time = 0, frame_send_time = 0;
@@ -1415,10 +1416,6 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
     st_buffer_reset(p_lsm_ses->common.buffer);
 
     if (p_lsm_ses->common.enable_second_stage) {
-        prepend_bytes =
-            convert_ms_to_bytes(
-                p_lsm_ses->common.vendor_uuid_info->kw_start_tolerance,
-                &p_lsm_ses->common.config);
         if (p_lsm_ses->common.sthw_cfg.client_req_hist_buf) {
             kw_duration_bytes =
                 convert_ms_to_bytes(
@@ -1446,15 +1443,20 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
              * detections. Similarly, error tolerance is added to the end of the
              * buffer for generic and non generic detection event usecases.
              */
-            if (p_lsm_ses->common.kw_start_idx > prepend_bytes) {
-                st_sec_stage->ss_session->buf_start =
-                    p_lsm_ses->common.kw_start_idx - prepend_bytes;
-            } else {
-                st_sec_stage->ss_session->buf_start = 0;
-            }
-
             if (st_sec_stage->ss_info->sm_detection_type ==
                 ST_SM_TYPE_KEYWORD_DETECTION) {
+                cnn_prepend_bytes =
+                    convert_ms_to_bytes(
+                        p_lsm_ses->common.vendor_uuid_info->kw_start_tolerance,
+                        &p_lsm_ses->common.config);
+
+                if (p_lsm_ses->common.kw_start_idx > cnn_prepend_bytes) {
+                    st_sec_stage->ss_session->buf_start =
+                        p_lsm_ses->common.kw_start_idx - cnn_prepend_bytes;
+                } else {
+                    st_sec_stage->ss_session->buf_start = 0;
+                }
+
                 cnn_append_bytes =
                     convert_ms_to_bytes(
                         (p_lsm_ses->common.vendor_uuid_info->kw_end_tolerance +
@@ -1479,6 +1481,18 @@ void process_raw_lab_data_ape(st_hw_session_lsm_t *p_lsm_ses)
                 st_sec_stage->ss_session->det_status = KEYWORD_DETECTION_PENDING;
             } else if (st_sec_stage->ss_info->sm_detection_type ==
                 ST_SM_TYPE_USER_VERIFICATION) {
+                vop_prepend_bytes =
+                    convert_ms_to_bytes(
+                        st_sec_stage->ss_info->data_before_kw_start,
+                        &p_lsm_ses->common.config);
+
+                if (p_lsm_ses->common.kw_start_idx > vop_prepend_bytes) {
+                    st_sec_stage->ss_session->buf_start =
+                        p_lsm_ses->common.kw_start_idx - vop_prepend_bytes;
+                } else {
+                    st_sec_stage->ss_session->buf_start = 0;
+                }
+
                 vop_append_bytes =
                     convert_ms_to_bytes(
                         p_lsm_ses->common.vendor_uuid_info->kw_end_tolerance,

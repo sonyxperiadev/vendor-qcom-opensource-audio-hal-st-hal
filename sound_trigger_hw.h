@@ -265,6 +265,7 @@ struct sound_trigger_device {
     bool support_dynamic_ec_update;
     bool screen_off;
     bool barge_in_mode;
+    int ec_reset_pending_cnt;
 };
 
 typedef struct sound_trigger_device sound_trigger_device_t;
