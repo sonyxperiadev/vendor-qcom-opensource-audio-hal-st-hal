@@ -4596,6 +4596,11 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         STATE_TRANSITION(st_ses, loaded_state_fn);
         break;
 
+    case ST_SES_EV_RESUME:
+        if (stc_ses->paused == true)
+            stc_ses->paused = false;
+        break;
+
     case ST_SES_EV_STOP:
         status = stop_session(st_ses, hw_ses, false);
         if (status)
