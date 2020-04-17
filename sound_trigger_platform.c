@@ -4669,7 +4669,7 @@ bool platform_stdev_check_and_update_concurrency
 {
     struct platform_data *my_data;
     sound_trigger_device_t *stdev;
-    bool concurrency_ses_allowed = false;
+    bool concurrency_ses_allowed = true;
 
     if (!platform) {
         ALOGE("%s: NULL platform", __func__);
@@ -4723,13 +4723,12 @@ bool platform_stdev_check_and_update_concurrency
         }
         if (event_type == AUDIO_EVENT_PLAYBACK_STREAM_ACTIVE ||
             event_type == AUDIO_EVENT_PLAYBACK_STREAM_INACTIVE) {
-            concurrency_ses_allowed = true;
             if (stdev->rx_concurrency_disabled &&
                 stdev->rx_concurrency_active > 0 &&
                 num_sessions > stdev->rx_conc_max_st_ses)
                 concurrency_ses_allowed = false;
-        } else if (stdev->conc_capture_supported) {
-            concurrency_ses_allowed = true;
+        }
+        if (concurrency_ses_allowed && stdev->conc_capture_supported) {
             if ((!stdev->conc_voice_call_supported && stdev->conc_voice_active) ||
                 (!stdev->conc_voip_call_supported && stdev->conc_voip_active))
                 concurrency_ses_allowed = false;
@@ -4757,8 +4756,8 @@ bool platform_stdev_check_and_update_concurrency
         }
         if (stdev->conc_capture_supported)
             concurrency_ses_allowed = stdev->session_allowed;
-        else if (stdev->tx_concurrency_active == 0)
-            concurrency_ses_allowed = true;
+        else if (stdev->tx_concurrency_active > 0)
+            concurrency_ses_allowed = false;
     }
 
     /*
