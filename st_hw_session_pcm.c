@@ -1268,9 +1268,8 @@ static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
     p_pcm_ses->out_config = p_pcm_ses->common.config;
     p_pcm_ses->capture_config = p_pcm_ses->common.config;
     p_pcm_ses->lab_config = p_pcm_ses->common.config;
-    platform_stdev_check_and_update_pcm_config(p_ses->stdev->platform,
-                                               &p_pcm_ses->capture_config,
-                                               v_info, p_ses->exec_mode);
+    platform_stdev_check_and_update_pcm_config(&p_pcm_ses->capture_config,
+                                               v_info);
 
     p_pcm_ses->capture_config.period_size =
                CALCULATE_PERIOD_SIZE(SOUND_TRIGGER_PCM_BUFFER_DURATION_MS,

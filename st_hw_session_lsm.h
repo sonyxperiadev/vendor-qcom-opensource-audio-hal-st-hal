@@ -1,6 +1,6 @@
 /* st_hw_session_lsm.h
  *
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -51,11 +51,6 @@ struct sound_trigger_device;
     ((((SOUND_TRIGGER_SAMPLING_RATE_16000 * SOUND_TRIGGER_APE_BUFFER_DURATION_MS) \
        /(SOUND_TRIGGER_APE_PERIOD_COUNT * 1000)) + 0x1f) & ~0x1f)
 
-#define SOUND_TRIGGER_CPE_PERIOD_COUNT (6)
-#define SOUND_TRIGGER_CPE_PERIOD_SIZE \
-    CALCULATE_PERIOD_SIZE(SOUND_TRIGGER_CPE_LAB_DRV_BUF_DURATION_MS, \
-    SOUND_TRIGGER_SAMPLING_RATE_16000, SOUND_TRIGGER_CPE_PERIOD_COUNT, 32)
-
 /*
  * The chosen theshold for determining FTRT vs. RT data is one tenth of the
  * buffer duration. There can be frames received that are partially FTRT and
@@ -67,33 +62,6 @@ struct sound_trigger_device;
 #define APE_MAX_LAB_FTRT_FRAME_RD_TIME_NS \
     ((SOUND_TRIGGER_APE_BUFFER_DURATION_MS * NSECS_PER_MSEC)\
     / (10 * SOUND_TRIGGER_APE_PERIOD_COUNT))
-#define CPE_MAX_LAB_FTRT_FRAME_RD_TIME_NS \
-    ((SOUND_TRIGGER_CPE_LAB_DRV_BUF_DURATION_MS * NSECS_PER_MSEC)\
-    / (2 * SOUND_TRIGGER_CPE_PERIOD_COUNT))
-
-#define CEIL(a, b) (((a) + ((b)-1)) / (b))
-/* Number of pcm reads to try to find the first sync word */
-#define SOUND_TRIGGER_CPE_FTRT_SYNC_MAX_RETRY_DURATION_MS (160)
-#define SOUND_TRIGGER_SYNC_WORD_MAX_RETRY_CNT ( \
-    (CEIL((SOUND_TRIGGER_CPE_FTRT_SYNC_MAX_RETRY_DURATION_MS * \
-     SOUND_TRIGGER_CPE_PERIOD_COUNT), \
-     SOUND_TRIGGER_CPE_LAB_DRV_BUF_DURATION_MS)))
-
-/* ADPCM decoder sample sizes */
-#define ADPCM_COMPRESSION_RATIO (4)
-#define ADPCM_MAX_IN_FRAME_SIZE (162)
-#define ADPCM_MAX_OUT_SAMPLES_PER_FRAME (320)
-#define ADPCM_MAX_OUT_FRAME_SIZE (ADPCM_MAX_OUT_SAMPLES_PER_FRAME << 1)
-
-/* CPE LAB Buffer configuration params  */
-#define CPE_PACKET_SYNC_WORD (0xAA)
-#define CPE_PACKET_FORMAT_MEDIA_TYPE (0x80)
-#define CPE_PACKET_FORMAT_EOS (0x81)
-#define CPE_PACKET_FORMAT_NULL (0xFF)
-#define CPE_PACKET_FORMAT_ADPCM (0x01)
-#define CPE_PACKET_FORMAT_PCM (0x00)
-#define CPE_PACKET_DATA_FORMAT_RAW (0x01)
-#define CPE_PACKET_DATA_FORMAT_PACKED (0x00)
 
 #define LSM_ABORT_RETRY_COUNT (5)
 #define LSM_ABORT_WAIT_TIMEOUT_NS (30 * NSECS_PER_MSEC)
@@ -150,19 +118,14 @@ struct lsm_param_custom_config {
     struct lsm_param_payload common;
 }__packed;
 
-struct cpe_packet_hdr {
-    unsigned char sync_word;
-    unsigned char stream_type;
-    unsigned char stream_id;
-    unsigned char format;
-    unsigned short size;
-} __packed;
-
 struct st_hw_session_lsm {
     st_hw_session_t common;
     struct st_lsm_params* lsm_usecase;
     pthread_t callback_thread;
     bool exit_callback_thread;
+
+    pthread_t buffer_thread;
+    bool exit_buffer_thread;
 
     int pcm_id;
     struct pcm *pcm;
@@ -176,7 +139,6 @@ struct st_hw_session_lsm {
     unsigned char *lab_drv_buf; /* small buffer to hold one chunk received from
                                    pcm read */
     unsigned int lab_drv_buf_size;
-    unsigned char *dec_buf;
     unsigned int unread_bytes;
     pthread_cond_t cond;
     pthread_mutex_t lock;
@@ -188,8 +150,6 @@ struct st_hw_session_lsm {
 
     bool lab_buffers_allocated;
     bool lab_on_detection;
-
-    void *adpcm_dec_state;
 
     unsigned int bytes_written;
     long first_stage_det_event_timestamp;
