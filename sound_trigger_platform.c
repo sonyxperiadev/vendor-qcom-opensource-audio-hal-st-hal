@@ -3167,13 +3167,13 @@ done:
  */
 static int clear_devices(struct listnode *devices)
 {
-    struct listnode *node = NULL;
+    struct listnode *node = NULL, *temp = NULL;
     struct audio_device_info *item = NULL;
 
     if (devices == NULL)
         return 0;
 
-    list_for_each (node, devices) {
+    list_for_each_safe (node, temp, devices) {
         item = node_to_item(node, struct audio_device_info, list);
         if (item != NULL) {
             list_remove(&item->list);
