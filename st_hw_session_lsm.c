@@ -1248,7 +1248,7 @@ static int sound_trigger_set_device
 )
 {
     char st_device_name[DEVICE_NAME_MAX_SIZE] = { 0 };
-    int ref_cnt_idx = 0, ref_cnt = 0;
+    int ref_cnt_idx = 0, ref_cnt = 0, ref_enable_idx = 0;
     int status = 0;
     st_device_t st_device = 0;
     audio_devices_t capture_device = 0;
@@ -1291,6 +1291,8 @@ static int sound_trigger_set_device
 
         pthread_mutex_lock(&p_ses->stdev->ref_cnt_lock);
         ref_cnt_idx = (p_ses->exec_mode * ST_DEVICE_MAX) + st_device;
+        ref_enable_idx = (p_ses->exec_mode * ST_DEVICE_MAX) +
+            platform_get_lpi_st_device(st_device);
         ref_cnt = ++(p_ses->stdev->dev_ref_cnt[ref_cnt_idx]);
         app_type = platform_stdev_get_device_app_type(p_ses->stdev->platform,
                                                       profile_type);
@@ -1322,15 +1324,23 @@ static int sound_trigger_set_device
                            __func__, p_ses->st_device, p_ses->st_device_name);
                     audio_route_reset_and_update_path(p_ses->stdev->audio_route,
                         st_device_name);
+                    if (0 < p_ses->stdev->dev_enable_cnt[ref_enable_idx])
+                        --(p_ses->stdev->dev_enable_cnt[ref_enable_idx]);
                 }
 
-                ALOGD("%s: enable device (%x) = %s", __func__, st_device,
-                      st_device_name);
-                ATRACE_BEGIN("sthal:lsm: audio_route_apply_and_update_path");
-                audio_route_apply_and_update_path(p_ses->stdev->audio_route,
-                                                  st_device_name);
-                ATRACE_END();
-                update_hw_mad_exec_mode(p_ses->exec_mode, profile_type);
+                if (0 == p_ses->stdev->dev_enable_cnt[ref_enable_idx]) {
+                    ALOGD("%s: enable device (%x) = %s", __func__, st_device,
+                          st_device_name);
+                    ATRACE_BEGIN("sthal:lsm: audio_route_apply_and_update_path");
+                    audio_route_apply_and_update_path(p_ses->stdev->audio_route,
+                                                      st_device_name);
+                    ATRACE_END();
+                    update_hw_mad_exec_mode(p_ses->exec_mode, profile_type);
+                    ++(p_ses->stdev->dev_enable_cnt[ref_enable_idx]);
+                } else {
+                    ALOGD("%s: Device already enabled, no not re-enable",
+                        __func__);
+                }
             }
         } else {
             --(p_ses->stdev->dev_ref_cnt[ref_cnt_idx]);
@@ -1346,6 +1356,8 @@ static int sound_trigger_set_device
         }
 
         ref_cnt_idx = (p_ses->exec_mode * ST_DEVICE_MAX) + p_ses->st_device;
+        ref_enable_idx = (p_ses->exec_mode * ST_DEVICE_MAX) +
+            platform_get_lpi_st_device(p_ses->st_device);
         pthread_mutex_lock(&p_ses->stdev->ref_cnt_lock);
         ref_cnt = p_ses->stdev->dev_ref_cnt[ref_cnt_idx];
         if (0 < ref_cnt) {
@@ -1365,6 +1377,8 @@ static int sound_trigger_set_device
                                                   p_ses->st_device_name);
                 ATRACE_END();
                 update_hw_mad_exec_mode(ST_EXEC_MODE_NONE, profile_type);
+                if (0 < p_ses->stdev->dev_enable_cnt[ref_enable_idx])
+                    --(p_ses->stdev->dev_enable_cnt[ref_enable_idx]);
             } else {
                 ALOGD("%s: Non-hwmad device, concurrent capture on, do not disable", __func__);
             }

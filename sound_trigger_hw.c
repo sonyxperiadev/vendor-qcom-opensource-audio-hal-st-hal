@@ -2577,6 +2577,7 @@ static int stdev_close(hw_device_t *device)
     free(stdev->arm_pcm_use_cases);
     free(stdev->ape_pcm_use_cases);
     free(stdev->dev_ref_cnt);
+    free(stdev->dev_enable_cnt);
     list_for_each_safe(node, tmp_node, &stdev->sound_model_list) {
         st_session = node_to_item(node, st_session_t, list_node);
         list_remove(node);
@@ -2687,6 +2688,15 @@ static int stdev_open(const hw_module_t* module, const char* name,
         goto exit_1;
     }
 
+    stdev->dev_enable_cnt =
+        calloc(ST_EXEC_MODE_MAX * ST_DEVICE_MAX, sizeof(int));
+
+    if (!stdev->dev_enable_cnt) {
+        ALOGE("%s: ERROR. Mem alloc failed dev enable cnt", __func__);
+        status = -ENOMEM;
+        goto exit_1;
+    }
+
     if (hw_session_notifier_init(stdev_session_event_cb) < 0) {
         ALOGE("%s: Failed to initialize notifier", __func__);
         status = -ENOMEM;
@@ -2748,6 +2758,9 @@ static int stdev_open(const hw_module_t* module, const char* name,
 exit_1:
     if (stdev->dev_ref_cnt)
         free(stdev->dev_ref_cnt);
+
+    if (stdev->dev_enable_cnt)
+        free(stdev->dev_enable_cnt);
 
     if (stdev->arm_pcm_use_cases)
         free(stdev->arm_pcm_use_cases);
