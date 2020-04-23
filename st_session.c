@@ -2646,7 +2646,12 @@ static int restart_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses)
         st_ses->hw_session_started = true;
     } else {
         ALOGE("%s:[%d] failed to restart", __func__, st_ses->sm_handle);
-        st_ses->hw_session_started = false;
+        /*
+         * lower layers like gcs/lsm need to handle double stop calls properly
+         * to avoid possible crash, as some of the clean ups are already issued
+         * during fptrs->restart() when it's failed.
+         */
+        stop_hw_session(st_ses, hw_ses, true);
     }
 
     return status;
@@ -4591,6 +4596,11 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         STATE_TRANSITION(st_ses, loaded_state_fn);
         break;
 
+    case ST_SES_EV_RESUME:
+        if (stc_ses->paused == true)
+            stc_ses->paused = false;
+        break;
+
     case ST_SES_EV_STOP:
         status = stop_session(st_ses, hw_ses, false);
         if (status)
@@ -5260,6 +5270,7 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         hw_ses->fptrs->stop_buffering(hw_ses);
         if (hw_ses->sthw_cfg_updated || ev->ev_id == ST_SES_EV_START) {
             status = stop_session(st_ses, hw_ses, false);
+            STATE_TRANSITION(st_ses, loaded_state_fn);
             if (status) {
                 ALOGE("%s:[%d] failed to stop session, err %d", __func__,
                     st_ses->sm_handle, status);

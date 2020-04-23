@@ -4669,7 +4669,7 @@ bool platform_stdev_check_and_update_concurrency
 {
     struct platform_data *my_data;
     sound_trigger_device_t *stdev;
-    bool concurrency_ses_allowed = false;
+    bool concurrency_ses_allowed = true;
 
     if (!platform) {
         ALOGE("%s: NULL platform", __func__);
@@ -4723,13 +4723,12 @@ bool platform_stdev_check_and_update_concurrency
         }
         if (event_type == AUDIO_EVENT_PLAYBACK_STREAM_ACTIVE ||
             event_type == AUDIO_EVENT_PLAYBACK_STREAM_INACTIVE) {
-            concurrency_ses_allowed = true;
             if (stdev->rx_concurrency_disabled &&
                 stdev->rx_concurrency_active > 0 &&
                 num_sessions > stdev->rx_conc_max_st_ses)
                 concurrency_ses_allowed = false;
-        } else if (stdev->conc_capture_supported) {
-            concurrency_ses_allowed = true;
+        }
+        if (concurrency_ses_allowed && stdev->conc_capture_supported) {
             if ((!stdev->conc_voice_call_supported && stdev->conc_voice_active) ||
                 (!stdev->conc_voip_call_supported && stdev->conc_voip_active))
                 concurrency_ses_allowed = false;
@@ -4757,8 +4756,8 @@ bool platform_stdev_check_and_update_concurrency
         }
         if (stdev->conc_capture_supported)
             concurrency_ses_allowed = stdev->session_allowed;
-        else if (stdev->tx_concurrency_active == 0)
-            concurrency_ses_allowed = true;
+        else if (stdev->tx_concurrency_active > 0)
+            concurrency_ses_allowed = false;
     }
 
     /*
@@ -5692,10 +5691,12 @@ void platform_stdev_send_ec_ref_cfg
     if (is_ec_profile(profile_type)) {
         event_info.st_ec_ref_enabled = enable;
         // reset the pending active EC mixer ctls first
-        if (!stdev->audio_ec_enabled && stdev->ec_reset_pending_cnt > 0) {
-            while (stdev->ec_reset_pending_cnt--)
+        if (!stdev->audio_ec_enabled) {
+            while (stdev->ec_reset_pending_cnt > 0) {
                 audio_route_reset_and_update_path(stdev->audio_route,
                         my_data->ec_ref_mixer_path);
+                stdev->ec_reset_pending_cnt--;
+            }
         }
         if (enable) {
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);
