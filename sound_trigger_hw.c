@@ -2558,7 +2558,8 @@ static int stdev_stop_recognition(const struct sound_trigger_hw_device *dev,
 
 static int stdev_close(hw_device_t *device)
 {
-    struct sound_trigger_device *stdev = (struct sound_trigger_device *)device;
+    struct sound_trigger_device *st_device =
+        (struct sound_trigger_device *)device;
     st_session_t *st_session = NULL;
     struct listnode *node = NULL, *tmp_node = NULL;
     int status = 0;
@@ -2567,18 +2568,18 @@ static int stdev_close(hw_device_t *device)
     ATRACE_BEGIN("sthal: stdev_close");
 
     pthread_mutex_lock(&stdev_init_lock);
-    if (!stdev || (--stdev_ref_cnt != 0)) {
+    if (!st_device || (--stdev_ref_cnt != 0)) {
         goto exit;
     }
 
-    pthread_mutex_lock(&stdev->lock);
+    pthread_mutex_lock(&st_device->lock);
     sthw_extn_lpma_deinit();
-    platform_stdev_deinit(stdev->platform);
-    free(stdev->arm_pcm_use_cases);
-    free(stdev->ape_pcm_use_cases);
-    free(stdev->dev_ref_cnt);
-    free(stdev->dev_enable_cnt);
-    list_for_each_safe(node, tmp_node, &stdev->sound_model_list) {
+    platform_stdev_deinit(st_device->platform);
+    free(st_device->arm_pcm_use_cases);
+    free(st_device->ape_pcm_use_cases);
+    free(st_device->dev_ref_cnt);
+    free(st_device->dev_enable_cnt);
+    list_for_each_safe(node, tmp_node, &st_device->sound_model_list) {
         st_session = node_to_item(node, st_session_t, list_node);
         list_remove(node);
         st_session_stop_lab(st_session);
@@ -2591,28 +2592,29 @@ static int stdev_close(hw_device_t *device)
         free(st_session);
     }
 
-    pthread_mutex_unlock(&stdev->lock);
+    pthread_mutex_unlock(&st_device->lock);
     hw_session_notifier_deinit();
 
-    if (stdev->transit_to_adsp_on_playback ||
-        stdev->transit_to_adsp_on_battery_charging) {
-        stdev->stop_transitions_thread_loop = true;
-        pthread_cond_signal(&stdev->transitions_cond);
-        status = pthread_join(stdev->transitions_thread, NULL);
+    if (st_device->transit_to_adsp_on_playback ||
+        st_device->transit_to_adsp_on_battery_charging) {
+        st_device->stop_transitions_thread_loop = true;
+        pthread_cond_signal(&st_device->transitions_cond);
+        status = pthread_join(st_device->transitions_thread, NULL);
         if (status)
             ALOGE("%s: Error joining transitions thread. status = %d",
                 __func__, status);
     }
 
-    pthread_mutex_destroy(&stdev->lock);
-    pthread_mutex_destroy(&stdev->ref_cnt_lock);
+    pthread_mutex_destroy(&st_device->lock);
+    pthread_mutex_destroy(&st_device->ref_cnt_lock);
     free(device);
     stdev = NULL;
 
 exit:
     pthread_mutex_unlock(&stdev_init_lock);
     ATRACE_END();
-    ALOGD("%s: Exit device=%p cnt=%d ", __func__, stdev, stdev_ref_cnt);
+    ALOGD("%s: Exit device=%p cnt=%d ", __func__, st_device,
+        stdev_ref_cnt);
     return 0;
 }
 
@@ -2854,8 +2856,11 @@ int sound_trigger_hw_call_back(audio_event_type_t event,
     st_exec_mode_t exec_mode = 0;
     sound_model_handle_t sm_handle = 0;
 
-    if (!stdev)
+    pthread_mutex_lock(&stdev_init_lock);
+    if (!stdev) {
+        pthread_mutex_unlock(&stdev_init_lock);
         return -ENODEV;
+    }
 
     switch (event) {
     case AUDIO_EVENT_PLAYBACK_STREAM_INACTIVE:
@@ -3091,6 +3096,7 @@ int sound_trigger_hw_call_back(audio_event_type_t event,
         break;
     }
 
+    pthread_mutex_unlock(&stdev_init_lock);
     return ret;
 }
 
