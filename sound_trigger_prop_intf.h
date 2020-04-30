@@ -73,7 +73,8 @@ enum audio_event_type {
     AUDIO_EVENT_BATTERY_STATUS_CHANGED,
     AUDIO_EVENT_GET_PARAM,
     AUDIO_EVENT_UPDATE_ECHO_REF,
-    AUDIO_EVENT_SCREEN_STATUS_CHANGED
+    AUDIO_EVENT_SCREEN_STATUS_CHANGED,
+    AUDIO_EVENT_ROUTE_INIT_DONE
 };
 typedef enum audio_event_type audio_event_type_t;
 
@@ -137,6 +138,7 @@ struct audio_event_info {
         struct audio_hal_usecase usecase;
         bool audio_ec_ref_enabled;
         struct sound_trigger_get_param_data st_get_param_data;
+        struct audio_route *audio_route;
     } u;
     struct sound_trigger_device_info device_info;
 };

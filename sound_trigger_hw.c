@@ -3290,6 +3290,15 @@ int sound_trigger_hw_call_back(audio_event_type_t event,
         handle_screen_status_change(config);
         break;
 
+    case AUDIO_EVENT_ROUTE_INIT_DONE:
+        if (!config) {
+            ALOGE("%s: NULL config for AUDIO_EVENT_ROUTE_INIT_DONE", __func__);
+            ret = -EINVAL;
+            break;
+        }
+        stdev->audio_route = config->u.audio_route;
+        break;
+
     default:
         ALOGW("%s: Unknown event %d", __func__, event);
         break;
