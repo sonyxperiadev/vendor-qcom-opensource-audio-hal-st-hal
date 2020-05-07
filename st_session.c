@@ -203,7 +203,6 @@ void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
                 ev.payload.detected.detect_status = 3;
 
             DISPATCH_EVENT(st_ses, ev, status);
-            break;
         }
 
         if (!lock_status)
