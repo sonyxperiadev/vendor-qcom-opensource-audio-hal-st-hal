@@ -64,6 +64,7 @@ typedef unsigned char __u8;
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sound/asound.h>
 #include <sound/msmcal-hwdep.h>
 #include <linux/msm_audio_calibration.h> /* for AUDIO_CORE_METAINFO_CAL_TYPE; audio_cal_info_metainfo */
 #include <sound/lsm_params.h>
