@@ -485,8 +485,7 @@ static int check_and_transit_ape_ses_to_cpe(st_session_t *cur_ses)
         goto exit;
     }
 
-    max_sessions = stdev->is_gcs ?
-                   stdev->max_wdsp_sessions : stdev->max_cpe_sessions;
+    max_sessions = stdev->max_wdsp_sessions;
 
     /* Initialize transit cpe phrases/users for all ADSP sessions */
     list_for_each(node, &stdev->sound_model_list) {
@@ -839,7 +838,7 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
          *       by audio capture usecase, so need to do session pause->resume
          *       to resume tx path.
          */
-        if (!conc_allowed && stdev->session_allowed) {
+        if (!conc_allowed) {
             list_for_each(p_ses_node, &stdev->sound_model_list) {
                 p_ses = node_to_item(p_ses_node, st_session_t, list_node);
                 st_session_pause(p_ses);
@@ -1246,8 +1245,8 @@ static void handle_echo_ref_switch(audio_event_type_t event_type,
              platform_stdev_compare_device_type(&stdev->active_rx_dev_list,
                  AUDIO_DEVICE_OUT_SPEAKER) ||
              platform_stdev_compare_device_type(&stdev->active_rx_dev_list,
-                 AUDIO_DEVICE_IN_WIRED_HEADSET))) {
-
+                 AUDIO_DEVICE_IN_WIRED_HEADSET)) &&
+             stdev->session_allowed) {
             /* pause and resume ADSP sessions to send new echo reference */
             list_for_each(node, &stdev->sound_model_list) {
                 p_ses = node_to_item(node, st_session_t, list_node);
@@ -1284,24 +1283,14 @@ static int stdev_get_properties(const struct sound_trigger_hw_device *dev,
      * delegated to sthal level, where sthal returns error if sound model
      * sessions exceed the platform supported for a given execution mode.
      */
-    if (stdev->is_gcs) {
-        stdev->hw_properties->max_sound_models = MAX(stdev->max_wdsp_sessions,
-            stdev->max_ape_sessions);
-        stdev->hw_properties->max_key_phrases = MAX(stdev->avail_cpe_phrases,
-            stdev->avail_ape_phrases);
-        stdev->hw_properties->max_users = MAX(stdev->avail_cpe_users,
-            stdev->avail_ape_users);
-        stdev->hw_properties->max_buffer_ms = ST_GRAPHITE_LAB_BUF_DURATION_MS;
-    } else {
-        stdev->hw_properties->max_sound_models = MAX(stdev->max_cpe_sessions,
-            stdev->max_ape_sessions);
-        stdev->hw_properties->max_key_phrases = MAX(stdev->avail_cpe_phrases,
-            stdev->avail_ape_phrases);
-        stdev->hw_properties->max_users = MAX(stdev->avail_cpe_users,
-            stdev->avail_ape_users);
-        stdev->hw_properties->max_buffer_ms =
-            SOUND_TRIGGER_CPE_LAB_DRV_BUF_DURATION_MS;
-    }
+    stdev->hw_properties->max_sound_models = MAX(stdev->max_wdsp_sessions,
+        stdev->max_ape_sessions);
+    stdev->hw_properties->max_key_phrases = MAX(stdev->avail_cpe_phrases,
+        stdev->avail_ape_phrases);
+    stdev->hw_properties->max_users = MAX(stdev->avail_cpe_users,
+        stdev->avail_ape_users);
+    stdev->hw_properties->max_buffer_ms = ST_GRAPHITE_LAB_BUF_DURATION_MS;
+
     ALOGVV("%s version=0x%x recognition_modes=%d, capture_transition=%d, "
            "concurrent_capture=%d", __func__, stdev->hw_properties->version,
            stdev->hw_properties->recognition_modes,
@@ -1357,8 +1346,7 @@ static st_exec_mode_t get_session_exec_mode
      */
     if (v_info->exec_mode_cfg == EXEC_MODE_CFG_CPE) {
         /* Algorithm configured for CPE only */
-        if ((!stdev->is_gcs && (num_sessions < stdev->max_cpe_sessions)) ||
-            (stdev->is_gcs && (num_sessions < stdev->max_wdsp_sessions))) {
+        if (num_sessions < stdev->max_wdsp_sessions) {
             if (common_sm->type == SOUND_MODEL_TYPE_KEYPHRASE) {
                 /* Keyphrase sound model */
                 if (check_phrases_users_available(v_info, num_phrases,
@@ -1394,8 +1382,7 @@ static st_exec_mode_t get_session_exec_mode
              * CPE mode for all sessions.
              */
             ALOGV("%s: EXEC_MODE_CFG_DYNAMIC: req exec mode CPE", __func__);
-            if ((!stdev->is_gcs && (num_sessions < stdev->max_cpe_sessions)) ||
-                (stdev->is_gcs && (num_sessions < stdev->max_wdsp_sessions))) {
+            if (num_sessions < stdev->max_wdsp_sessions) {
                 if (common_sm->type == SOUND_MODEL_TYPE_KEYPHRASE) {
                     /* Keyphrase sound model */
                     if (check_phrases_users_available(v_info, num_phrases,
@@ -1466,10 +1453,7 @@ static st_exec_mode_t get_session_exec_mode
                 }
             } else {
                 /* Load on WDSP */
-                if ((!stdev->is_gcs &&
-                    (num_sessions < stdev->max_cpe_sessions)) ||
-                    (stdev->is_gcs &&
-                    (num_sessions < stdev->max_wdsp_sessions))) {
+                if (num_sessions < stdev->max_wdsp_sessions) {
                     if (common_sm->type == SOUND_MODEL_TYPE_KEYPHRASE) {
                         /* Keyphrase sound model */
                         if (check_phrases_users_available(v_info, num_phrases,
@@ -2087,15 +2071,6 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
     st_hw_check_and_update_lpi(stdev, NULL);
     st_hw_check_and_set_lpi_mode(st_session);
 
-    /* CPE DRAM can only be accessed by single client, i.e. Apps or CPE,
-     * but not both in parallel. Sending params here can access DRAM.
-     * If another session is already active, stop it and restart after
-     * sending this session params.
-     * note: TODO: remove checking of "is_gcs" flag here
-     */
-    if ((ST_EXEC_MODE_CPE == st_session->exec_mode) && !stdev->is_gcs)
-        stop_other_sessions(stdev, st_session);
-
     status = st_session_load_sm(st_session);
     if (status) {
         goto exit_3;
@@ -2108,9 +2083,6 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
             goto exit_3;
         }
     }
-
-    if ((ST_EXEC_MODE_CPE == st_session->exec_mode) && !stdev->is_gcs)
-        start_other_sessions(stdev, st_session);
 
     /* Keyphrase, user information is valid only for keyphrase sound models */
     if ((common_sm->type == SOUND_MODEL_TYPE_KEYPHRASE) && (phrase_sm != NULL))
@@ -2586,7 +2558,8 @@ static int stdev_stop_recognition(const struct sound_trigger_hw_device *dev,
 
 static int stdev_close(hw_device_t *device)
 {
-    struct sound_trigger_device *stdev = (struct sound_trigger_device *)device;
+    struct sound_trigger_device *st_device =
+        (struct sound_trigger_device *)device;
     st_session_t *st_session = NULL;
     struct listnode *node = NULL, *tmp_node = NULL;
     int status = 0;
@@ -2595,19 +2568,18 @@ static int stdev_close(hw_device_t *device)
     ATRACE_BEGIN("sthal: stdev_close");
 
     pthread_mutex_lock(&stdev_init_lock);
-    if (!stdev || (--stdev_ref_cnt != 0)) {
+    if (!st_device || (--stdev_ref_cnt != 0)) {
         goto exit;
     }
 
-    pthread_mutex_lock(&stdev->lock);
+    pthread_mutex_lock(&st_device->lock);
     sthw_extn_lpma_deinit();
-    platform_stdev_deinit(stdev->platform);
-    free(stdev->arm_pcm_use_cases);
-    if (!stdev->is_gcs)
-        free(stdev->cpe_pcm_use_cases);
-    free(stdev->ape_pcm_use_cases);
-    free(stdev->dev_ref_cnt);
-    list_for_each_safe(node, tmp_node, &stdev->sound_model_list) {
+    platform_stdev_deinit(st_device->platform);
+    free(st_device->arm_pcm_use_cases);
+    free(st_device->ape_pcm_use_cases);
+    free(st_device->dev_ref_cnt);
+    free(st_device->dev_enable_cnt);
+    list_for_each_safe(node, tmp_node, &st_device->sound_model_list) {
         st_session = node_to_item(node, st_session_t, list_node);
         list_remove(node);
         st_session_stop_lab(st_session);
@@ -2620,28 +2592,29 @@ static int stdev_close(hw_device_t *device)
         free(st_session);
     }
 
-    pthread_mutex_unlock(&stdev->lock);
+    pthread_mutex_unlock(&st_device->lock);
     hw_session_notifier_deinit();
 
-    if (stdev->transit_to_adsp_on_playback ||
-        stdev->transit_to_adsp_on_battery_charging) {
-        stdev->stop_transitions_thread_loop = true;
-        pthread_cond_signal(&stdev->transitions_cond);
-        status = pthread_join(stdev->transitions_thread, NULL);
+    if (st_device->transit_to_adsp_on_playback ||
+        st_device->transit_to_adsp_on_battery_charging) {
+        st_device->stop_transitions_thread_loop = true;
+        pthread_cond_signal(&st_device->transitions_cond);
+        status = pthread_join(st_device->transitions_thread, NULL);
         if (status)
             ALOGE("%s: Error joining transitions thread. status = %d",
                 __func__, status);
     }
 
-    pthread_mutex_destroy(&stdev->lock);
-    pthread_mutex_destroy(&stdev->ref_cnt_lock);
+    pthread_mutex_destroy(&st_device->lock);
+    pthread_mutex_destroy(&st_device->ref_cnt_lock);
     free(device);
     stdev = NULL;
 
 exit:
     pthread_mutex_unlock(&stdev_init_lock);
     ATRACE_END();
-    ALOGD("%s: Exit device=%p cnt=%d ", __func__, stdev, stdev_ref_cnt);
+    ALOGD("%s: Exit device=%p cnt=%d ", __func__, st_device,
+        stdev_ref_cnt);
     return 0;
 }
 
@@ -2698,17 +2671,6 @@ static int stdev_open(const hw_module_t* module, const char* name,
         goto exit_1;
     }
 
-    if (!stdev->is_gcs) {
-        stdev->cpe_pcm_use_cases =
-            calloc(stdev->max_cpe_sessions, sizeof(struct use_case_info));
-
-        if (!stdev->cpe_pcm_use_cases) {
-            ALOGE("%s: ERROR. Mem alloc failed for cpe use cases", __func__);
-            status = -ENODEV;
-            goto exit_1;
-        }
-    }
-
     /* Each arm session is associated with corresponding ec ref session */
     stdev->arm_pcm_use_cases =
         calloc(stdev->max_arm_sessions * 2, sizeof(struct use_case_info));
@@ -2724,6 +2686,15 @@ static int stdev_open(const hw_module_t* module, const char* name,
 
     if (!stdev->dev_ref_cnt) {
         ALOGE("%s: ERROR. Mem alloc failed dev ref cnt", __func__);
+        status = -ENOMEM;
+        goto exit_1;
+    }
+
+    stdev->dev_enable_cnt =
+        calloc(ST_EXEC_MODE_MAX * ST_DEVICE_MAX, sizeof(int));
+
+    if (!stdev->dev_enable_cnt) {
+        ALOGE("%s: ERROR. Mem alloc failed dev enable cnt", __func__);
         status = -ENOMEM;
         goto exit_1;
     }
@@ -2790,11 +2761,11 @@ exit_1:
     if (stdev->dev_ref_cnt)
         free(stdev->dev_ref_cnt);
 
+    if (stdev->dev_enable_cnt)
+        free(stdev->dev_enable_cnt);
+
     if (stdev->arm_pcm_use_cases)
         free(stdev->arm_pcm_use_cases);
-
-    if (stdev->cpe_pcm_use_cases)
-        free(stdev->cpe_pcm_use_cases);
 
     if (stdev->ape_pcm_use_cases)
         free(stdev->ape_pcm_use_cases);
@@ -2885,8 +2856,11 @@ int sound_trigger_hw_call_back(audio_event_type_t event,
     st_exec_mode_t exec_mode = 0;
     sound_model_handle_t sm_handle = 0;
 
-    if (!stdev)
+    pthread_mutex_lock(&stdev_init_lock);
+    if (!stdev) {
+        pthread_mutex_unlock(&stdev_init_lock);
         return -ENODEV;
+    }
 
     switch (event) {
     case AUDIO_EVENT_PLAYBACK_STREAM_INACTIVE:
@@ -3122,6 +3096,7 @@ int sound_trigger_hw_call_back(audio_event_type_t event,
         break;
     }
 
+    pthread_mutex_unlock(&stdev_init_lock);
     return ret;
 }
 

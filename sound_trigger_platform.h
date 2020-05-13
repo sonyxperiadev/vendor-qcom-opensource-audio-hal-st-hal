@@ -64,7 +64,6 @@ struct sound_trigger_device;
 #define MIXER_PATH_FILE_NAME_BG "/vendor/etc/sound_trigger_mixer_paths_bg"
 
 #define LIB_ACDB_LOADER "libacdbloader.so"
-#define LIB_ADPCM_DECODER "libadpcmdec.so"
 #define LIB_MULAW_DECODER "libmulawdec.so"
 #define LIB_SVA_SOUNDMODEL "liblistensoundmodel2.so"
 
@@ -195,12 +194,9 @@ struct hwdep_cal_param_data {
 };
 
 typedef enum {
-    ADPCM_CUSTOM_PACKET = 0x01,
-    ADPCM_RAW = 0x02,
     PCM_CUSTOM_PACKET = 0x04,
     PCM_RAW = 0x08,
     MULAW_RAW = 0x10,
-    ADPCM = (ADPCM_CUSTOM_PACKET | ADPCM_RAW),
     PCM = (PCM_CUSTOM_PACKET | PCM_RAW),
     MULAW = MULAW_RAW
 } st_capture_format_t;
@@ -507,20 +503,11 @@ struct st_vendor_info* platform_stdev_get_vendor_info
 
 void platform_stdev_check_and_update_pcm_config
 (
-   void *platform,
    struct pcm_config *config,
-   struct st_vendor_info *v_info,
-   enum st_exec_mode exec_mode
+   struct st_vendor_info *v_info
 );
 
 int platform_stdev_get_hw_type(void *platform);
-
-int platform_cpe_get_pcm_device_id
-(
-   void *platform,
-   int sample_rate,
-   unsigned int* use_case_idx
-);
 
 int platform_ape_get_pcm_device_id
 (
@@ -529,12 +516,6 @@ int platform_ape_get_pcm_device_id
 );
 
 void platform_ape_free_pcm_device_id
-(
-   void *platform,
-   int pcm_id
-);
-
-void platform_cpe_free_pcm_device_id
 (
    void *platform,
    int pcm_id
@@ -670,6 +651,8 @@ void platform_stdev_check_and_update_ec_ref_config
 );
 
 bool platform_get_lpi_mode(void *my_data);
+
+int platform_get_lpi_st_device(int st_device);
 
 void platform_stdev_reset_backend_cfg(void *platform);
 

@@ -203,7 +203,49 @@ void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
                 ev.payload.detected.detect_status = 3;
 
             DISPATCH_EVENT(st_ses, ev, status);
+            break;
         }
+
+        if (!lock_status)
+            pthread_mutex_unlock(&st_ses->lock);
+        break;
+    }
+
+    case ST_HW_SESS_EVENT_BUFFERING_STOPPED:
+    {
+        st_session_ev_t ev;
+        ev.ev_id = ST_SES_EV_DEFERRED_STOP;
+        ev.stc_ses = st_ses->det_stc_ses;
+
+        /*
+         * If detection is sent to client while in buffering state,
+         * and if internal buffering is stopped due to errors, stop
+         * session internally as client is expected to restart the
+         * detection if required.
+         * Note: It is possible that detection event is not sent to
+         * client if second stage is not yet detected during internal
+         * buffering stop, in which case restart is posted from second
+         * stage thread for further detections. Only if the second
+         * stage detection hasn't be started due to internal buffering
+         * stop too early, restart session should be explictily issued.
+         */
+
+        do {
+            lock_status = pthread_mutex_trylock(&st_ses->lock);
+        } while (lock_status && !st_ses->det_stc_ses->pending_stop &&
+                 (st_ses->current_state == buffering_state_fn));
+
+        if (st_ses->det_stc_ses->pending_stop)
+            ALOGV("%s:[%d] pending stop already queued, ignore event",
+                __func__, st_ses->sm_handle);
+        else if (!st_ses->det_stc_ses->detection_sent)
+            ALOGV("%s:[%d] client callback hasn't been called, ignore event",
+                __func__, st_ses->sm_handle);
+        else if (st_ses->current_state != buffering_state_fn)
+            ALOGV("%s:[%d] session already stopped buffering, ignore event",
+                __func__, st_ses->sm_handle);
+        else if (!lock_status)
+            DISPATCH_EVENT(st_ses, ev, status);
 
         if (!lock_status)
             pthread_mutex_unlock(&st_ses->lock);
@@ -214,7 +256,6 @@ void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
         ALOGD("%s:[%d] unhandled event", __func__, st_ses->sm_handle);
         break;
     };
-
 }
 
 static inline void free_array_ptrs(char **arr, unsigned int arr_len)
@@ -1299,7 +1340,7 @@ static void get_conf_levels_from_dsp_payload(st_proxy_session_t *st_ses,
             payload += i;
         }
     } else {
-        if ((st_ses->exec_mode == ST_EXEC_MODE_CPE) && st_ses->stdev->is_gcs) {
+        if (st_ses->exec_mode == ST_EXEC_MODE_CPE) {
             *conf_levels = payload + 2;
             *conf_levels_size = payload_size - 2;
         } else {
@@ -2033,7 +2074,7 @@ static int parse_rc_config_key_conf_levels
         for (i = 0; i < conf_levels->num_sound_models; i++) {
             sm_levels = &conf_levels->conf_levels[i];
             if (sm_levels->sm_id == ST_SM_ID_SVA_GMM) {
-                if ((st_ses->stdev->is_gcs) && (st_hw_ses == st_ses->hw_ses_cpe))
+                if (st_hw_ses == st_ses->hw_ses_cpe)
                     status =
                         generate_sound_trigger_recognition_config_payload_v2(
                         (void *)sm_levels, out_conf_levels, out_num_conf_levels,
@@ -2090,8 +2131,7 @@ static int parse_rc_config_key_conf_levels
         for (i = 0; i < conf_levels_v2->num_sound_models; i++) {
             sm_levels_v2 = &conf_levels_v2->conf_levels[i];
             if (sm_levels_v2->sm_id == ST_SM_ID_SVA_GMM) {
-                if ((st_ses->stdev->is_gcs) &&
-                    (st_hw_ses == st_ses->hw_ses_cpe))
+                if (st_hw_ses == st_ses->hw_ses_cpe)
                     status =
                         generate_sound_trigger_recognition_config_payload_v2(
                         (void *)sm_levels_v2, out_conf_levels, out_num_conf_levels,
@@ -2269,7 +2309,7 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
 
         if (st_ses->vendor_uuid_info->is_qcva_uuid ||
             st_ses->vendor_uuid_info->is_qcmd_uuid) {
-            if (st_ses->stdev->is_gcs && st_hw_ses == st_ses->hw_ses_cpe)
+            if (st_hw_ses == st_ses->hw_ses_cpe)
                 status = generate_conf_levels_payload_from_rc_config_v2(
                     phrase_sm, rc_config, &conf_levels, &num_conf_levels);
             else
@@ -2646,7 +2686,12 @@ static int restart_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses)
         st_ses->hw_session_started = true;
     } else {
         ALOGE("%s:[%d] failed to restart", __func__, st_ses->sm_handle);
-        st_ses->hw_session_started = false;
+        /*
+         * lower layers like gcs/lsm need to handle double stop calls properly
+         * to avoid possible crash, as some of the clean ups are already issued
+         * during fptrs->restart() when it's failed.
+         */
+        stop_hw_session(st_ses, hw_ses, true);
     }
 
     return status;
@@ -2763,12 +2808,10 @@ static int get_first_stage_detection_params(st_proxy_session_t *st_ses,
         }
 
         if (is_active_vop_session) {
-            if ((st_ses->exec_mode == ST_EXEC_MODE_CPE) &&
-                 st_ses->stdev->is_gcs) {
+            if (st_ses->exec_mode == ST_EXEC_MODE_CPE) {
                 hw_ses->user_level = (int32_t)(*(payload_ptr +
                     GCS_NON_GENERIC_USER_LEVEL_OFFSET));
-            } else if ((st_ses->exec_mode == ST_EXEC_MODE_ADSP) ||
-                       !st_ses->stdev->is_gcs) {
+            } else if (st_ses->exec_mode == ST_EXEC_MODE_ADSP) {
                 hw_ses->user_level = (int32_t)(*(payload_ptr +
                     LSM_NON_GENERIC_USER_LEVEL_OFFSET));
             }
@@ -2784,7 +2827,7 @@ static int get_first_stage_detection_params(st_proxy_session_t *st_ses,
     return 0;
 }
 
-static inline int prepapre_second_stage_for_client(st_session_t *stc_ses)
+static inline int prepare_second_stage_for_client(st_session_t *stc_ses)
 {
     struct listnode *node = NULL;
     st_arm_second_stage_t *st_sec_stage = NULL;
@@ -3419,11 +3462,10 @@ static int process_detection_event_keyphrase(
             sizeof(struct sound_trigger_phrase_recognition_event);
         local_event->common.data_size = opaque_size;
         opaque_data = (uint8_t *)local_event + local_event->common.data_offset;
-        if ((st_ses->exec_mode == ST_EXEC_MODE_CPE) && st_ses->stdev->is_gcs) {
+        if (st_ses->exec_mode == ST_EXEC_MODE_CPE) {
             payload_ptr = (uint8_t *)payload + 2;
             payload_size -= 2; /* Re-use */
-        } else if ((st_ses->exec_mode == ST_EXEC_MODE_ADSP) ||
-                   !st_ses->stdev->is_gcs) {
+        } else if (st_ses->exec_mode == ST_EXEC_MODE_ADSP) {
             payload_ptr = (uint8_t *)payload;
         } else {
             ALOGE("%s: Invalid execution mode, exiting", __func__);
@@ -3503,8 +3545,7 @@ static int process_detection_event_keyphrase(
     } else {
         if (st_ses->vendor_uuid_info->is_qcva_uuid ||
             st_ses->vendor_uuid_info->is_qcmd_uuid) {
-            if (st_ses->stdev->is_gcs &&
-                ST_EXEC_MODE_CPE == st_ses->exec_mode &&
+            if (ST_EXEC_MODE_CPE == st_ses->exec_mode &&
                 !st_hw_ses->is_generic_event) {
                 payload_ptr = payload;
                 payload_ptr += 2; /* Skip minor_version and num_active_models */
@@ -4591,6 +4632,11 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         STATE_TRANSITION(st_ses, loaded_state_fn);
         break;
 
+    case ST_SES_EV_RESUME:
+        if (stc_ses->paused == true)
+            stc_ses->paused = false;
+        break;
+
     case ST_SES_EV_STOP:
         status = stop_session(st_ses, hw_ses, false);
         if (status)
@@ -4647,6 +4693,7 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
              */
             if (st_ses->lab_enabled)
                 hw_ses->fptrs->stop_buffering(hw_ses);
+            pthread_mutex_unlock(&st_ses->lock);
             break;
         }
         st_ses->det_stc_ses = stc_ses;
@@ -4672,6 +4719,7 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
                 hw_ses->fptrs->stop_buffering(hw_ses);
                 if (event)
                     free(event);
+                pthread_mutex_unlock(&st_ses->lock);
                 break;
             }
         } else {
@@ -4737,6 +4785,7 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
             status = -EINVAL;
             if (event)
                 free(event);
+            pthread_mutex_unlock(&st_ses->lock);
             break;
         }
         /*
@@ -4753,15 +4802,22 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
                 __func__, stc_ses->sm_handle);
             ATRACE_ASYNC_END("sthal: detection success",
                 st_ses->sm_handle);
+            if (!lab_enabled) {
+                st_session_ev_t deferred_ev = {
+                    .ev_id = ST_SES_EV_DEFERRED_STOP,
+                    .stc_ses = stc_ses
+                };
+                DISPATCH_EVENT(st_ses, deferred_ev, status);
+            }
             pthread_mutex_unlock(&st_ses->lock);
             ATRACE_BEGIN("sthal: client detection callback");
             callback(event, cookie);
             ATRACE_END();
+            if (event)
+                free(event);
         } else {
             pthread_mutex_unlock(&st_ses->lock);
         }
-        if (event)
-            free(event);
 
         /*
          * TODO: Add RECOGNITION_STATUS_GET_STATE_RESPONSE to
@@ -4773,88 +4829,6 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
              (ev->payload.detected.detect_status == 3))) {
             /* Cache lab data to internal buffers (blocking call) */
             hw_ses->fptrs->process_lab_capture(hw_ses);
-        }
-
-        /*
-         * It is possible that the client may start/stop/unload the session
-         * with the same lock held, before we aqcuire lock here.
-         * We need further processing only if client starts in detected state
-         * or buffering state if lab was enabled, else return gracefully.
-         * For multi-client scenario, only one client is assumed to be
-         * detected/bufffering, so the logic remains same.
-         */
-         do {
-             status = pthread_mutex_trylock(&st_ses->lock);
-         } while (status && ((st_ses->current_state == detected_state_fn) ||
-                  (st_ses->current_state == buffering_state_fn)) &&
-                  !st_ses->stdev->ssr_offline_received);
-
-        if (st_ses->current_state != detected_state_fn) {
-            ALOGV("%s:[%d] client not in detected state, lock status %d",
-                __func__, st_ses->sm_handle, status);
-            if (!status) {
-                /*
-                 * If detection is sent to client while in buffering state,
-                 * and if internal buffering is stopped due to errors, stop
-                 * session internally as client is expected to restart the
-                 * detection if required.
-                 * Note: It is possible that detection event is not sent to
-                 * client if second stage is not yet detected during internal
-                 * buffering stop, in which case restart is posted from second
-                 * stage thread for further detections. Only if the second
-                 * stage detection hasn't be started due to internal buffering
-                 * stop too early, restart session should be explictily issued.
-                 */
-                if (st_ses->current_state == buffering_state_fn) {
-                    if (stc_ses->detection_sent) {
-                        if (!stc_ses->pending_stop) {
-                            ALOGD("%s:[%d] buffering stopped internally, post c%d stop",
-                                __func__, st_ses->sm_handle,
-                                st_ses->det_stc_ses->sm_handle);
-                            status = hw_session_notifier_enqueue(stc_ses->sm_handle,
-                                ST_SES_EV_DEFERRED_STOP,
-                                ST_SES_DEFERRED_STOP_SS_DELAY_MS);
-                            if (!status)
-                                stc_ses->pending_stop = true;
-                        }
-                    } else {
-                        list_for_each(node, &stc_ses->second_stage_list) {
-                            st_sec_stage = node_to_item(node, st_arm_second_stage_t,
-                                                        list_node);
-                            if (!st_sec_stage->ss_session->start_processing) {
-                                st_session_ev_t ev = {.ev_id = ST_SES_EV_RESTART,
-                                                      .stc_ses = stc_ses};
-                                DISPATCH_EVENT(st_ses, ev, status);
-                                break;
-                            }
-                        }
-                    }
-                }
-                pthread_mutex_unlock(&st_ses->lock);
-            }
-            status = 0;
-            break;
-        }
-
-        /*
-         * If we are not buffering (i.e capture is not requested), then
-         * trigger a deferred stop. Most applications issue (re)start
-         * almost immediately. Delaying stop allows unnecessary teardown
-         * and reinitialization of backend.
-         */
-        if (!lab_enabled) {
-            /*
-             * Note that this event will only be posted to the detected state
-             * The current state may switch to active if the client
-             * issues start/restart before control of the callback thread
-             * reaches this point.
-             */
-            st_session_ev_t deferred_ev = { .ev_id = ST_SES_EV_DEFERRED_STOP,
-                .stc_ses = stc_ses};
-            DISPATCH_EVENT(st_ses, deferred_ev, status);
-        } else {
-            ALOGE("%s:[%d] capture is requested but state is still detected!?",
-                __func__, st_ses->sm_handle);
         }
         break;
 
@@ -5183,6 +5157,15 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         }
         break;
 
+    case ST_SES_EV_DEFERRED_STOP:
+        ALOGD("%s:[%d] post internal deferred stop from buffering state",
+            __func__, st_ses->sm_handle);
+        status = hw_session_notifier_enqueue(stc_ses->sm_handle,
+            ST_SES_EV_DEFERRED_STOP, ST_SES_DEFERRED_STOP_DELAY_MS);
+        if (!status)
+            stc_ses->pending_stop = true;
+        break;
+
     case ST_SES_EV_STOP:
          ALOGD("%s:[c%d-%d] handle event STOP", __func__, stc_ses->sm_handle,
              st_ses->sm_handle);
@@ -5260,6 +5243,7 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         hw_ses->fptrs->stop_buffering(hw_ses);
         if (hw_ses->sthw_cfg_updated || ev->ev_id == ST_SES_EV_START) {
             status = stop_session(st_ses, hw_ses, false);
+            STATE_TRANSITION(st_ses, loaded_state_fn);
             if (status) {
                 ALOGE("%s:[%d] failed to stop session, err %d", __func__,
                     st_ses->sm_handle, status);
@@ -5467,7 +5451,6 @@ static int ssr_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
                 status = -EINVAL;
                 break;
             }
-            prepapre_second_stage_for_client(stc_ses);
             stc_ses->state = ST_STATE_LOADED;
         } else {
             ALOGE("%s: received unexpected event, client state = %d",
@@ -5481,7 +5464,6 @@ static int ssr_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
             if (status)
                 ALOGE("%s:[c%d] update sound_model failed %d", __func__,
                     stc_ses->sm_handle, status);
-            stop_second_stage_for_client(stc_ses);
             stc_ses->state = ST_STATE_IDLE;
         } else {
             ALOGE("%s: received unexpected event, client state = %d",
@@ -5574,7 +5556,7 @@ int st_session_load_sm(st_session_t *stc_ses)
     pthread_mutex_lock(&st_ses->lock);
     DISPATCH_EVENT(st_ses, ev, status);
     if (!status) {
-        prepapre_second_stage_for_client(stc_ses);
+        prepare_second_stage_for_client(stc_ses);
         stc_ses->state = ST_STATE_LOADED;
     }
     pthread_mutex_unlock(&st_ses->lock);
@@ -6207,70 +6189,38 @@ int st_session_init(st_session_t *stc_ses, struct sound_trigger_device *stdev,
 
     if (v_info && (EXEC_MODE_CFG_DYNAMIC == v_info->exec_mode_cfg)) {
         st_ses->enable_trans = true;
-        if (stdev->is_gcs) {
             /* alloc and init cpe session*/
-            st_ses->hw_ses_cpe =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_gcs_t));
-            if (!st_ses->hw_ses_cpe) {
-                status = -ENOMEM;
-                goto cleanup;
-            }
-            status = st_hw_sess_gcs_init(st_ses->hw_ses_cpe, hw_sess_cb,
-                (void *)st_ses, ST_EXEC_MODE_CPE, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing gcs hw session failed %d", __func__,
-                    status);
-                goto cleanup;
-            }
-
-            /* alloc and init adsp session*/
-            st_ses->hw_ses_adsp =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
-            if (!st_ses->hw_ses_adsp) {
-                st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
-                status = -ENOMEM;
-                goto cleanup;
-            }
-
-            status = st_hw_sess_lsm_init(st_ses->hw_ses_adsp, hw_sess_cb,
-                (void *)st_ses, ST_EXEC_MODE_ADSP, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing lsm session failed", __func__);
-                st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
-                goto cleanup;
-            }
-
-        } else {
-            /* alloc and init cpe session*/
-            st_ses->hw_ses_cpe =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
-            if (!st_ses->hw_ses_cpe) {
-                status = -ENOMEM;
-                goto cleanup;
-            }
-            status = st_hw_sess_lsm_init(st_ses->hw_ses_cpe, hw_sess_cb,
-                (void *)st_ses, ST_EXEC_MODE_CPE, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initialzing lsm hw session failed %d", __func__,
-                    status);
-                goto cleanup;
-            }
-            /* alloc and init adsp session*/
-            st_ses->hw_ses_adsp =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
-            if (!st_ses->hw_ses_adsp) {
-                status = -ENOMEM;
-                st_hw_sess_lsm_deinit(st_ses->hw_ses_cpe);
-                goto cleanup;
-            }
-            status = st_hw_sess_lsm_init(st_ses->hw_ses_adsp, hw_sess_cb,
-                (void *)st_ses, ST_EXEC_MODE_ADSP, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing lsm session failed", __func__);
-                st_hw_sess_lsm_deinit(st_ses->hw_ses_cpe);
-                goto cleanup;
-            }
+        st_ses->hw_ses_cpe =
+            (st_hw_session_t *)calloc(1, sizeof(st_hw_session_gcs_t));
+        if (!st_ses->hw_ses_cpe) {
+            status = -ENOMEM;
+            goto cleanup;
         }
+        status = st_hw_sess_gcs_init(st_ses->hw_ses_cpe, hw_sess_cb,
+            (void *)st_ses, ST_EXEC_MODE_CPE, v_info, sm_handle, stdev);
+        if (status) {
+            ALOGE("%s: initializing gcs hw session failed %d", __func__,
+                status);
+            goto cleanup;
+        }
+
+        /* alloc and init adsp session*/
+        st_ses->hw_ses_adsp =
+            (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
+        if (!st_ses->hw_ses_adsp) {
+            st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
+            status = -ENOMEM;
+            goto cleanup;
+        }
+
+        status = st_hw_sess_lsm_init(st_ses->hw_ses_adsp, hw_sess_cb,
+            (void *)st_ses, ST_EXEC_MODE_ADSP, v_info, sm_handle, stdev);
+        if (status) {
+            ALOGE("%s: initializing lsm session failed", __func__);
+            st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
+            goto cleanup;
+        }
+
         /* set current hw_session */
         if (exec_mode == ST_EXEC_MODE_CPE)
             st_ses->hw_ses_current = st_ses->hw_ses_cpe;
@@ -6278,36 +6228,22 @@ int st_session_init(st_session_t *stc_ses, struct sound_trigger_device *stdev,
             st_ses->hw_ses_current = st_ses->hw_ses_adsp;
     } else if (v_info && (EXEC_MODE_CFG_CPE == v_info->exec_mode_cfg)) {
         st_ses->enable_trans = false;
-        if (stdev->is_gcs) {
-            ALOGD("%s: initializing gcs hw session", __func__);
-            st_ses->hw_ses_cpe =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_gcs_t));
-            if (!st_ses->hw_ses_cpe) {
-                status = -ENOMEM;
-                goto cleanup;
-            }
-            status = st_hw_sess_gcs_init(st_ses->hw_ses_cpe, hw_sess_cb,
-                (void *)st_ses, exec_mode, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing gcs hw session failed %d",
-                    __func__, status);
-                goto cleanup;
-            }
-        } else {
-            st_ses->hw_ses_cpe =
-                (st_hw_session_t *)calloc(1, sizeof(st_hw_session_lsm_t));
-            if (!st_ses->hw_ses_cpe) {
-                status = -ENOMEM;
-                goto cleanup;
-            }
-            status = st_hw_sess_lsm_init(st_ses->hw_ses_cpe, hw_sess_cb,
-                (void *)st_ses, exec_mode, v_info, sm_handle, stdev);
-            if (status) {
-                ALOGE("%s: initializing lsm hw session failed %d",
-                    __func__, status);
-                goto cleanup;
-            }
+
+        ALOGD("%s: initializing gcs hw session", __func__);
+        st_ses->hw_ses_cpe =
+            (st_hw_session_t *)calloc(1, sizeof(st_hw_session_gcs_t));
+        if (!st_ses->hw_ses_cpe) {
+            status = -ENOMEM;
+            goto cleanup;
         }
+        status = st_hw_sess_gcs_init(st_ses->hw_ses_cpe, hw_sess_cb,
+            (void *)st_ses, exec_mode, v_info, sm_handle, stdev);
+        if (status) {
+            ALOGE("%s: initializing gcs hw session failed %d",
+                __func__, status);
+            goto cleanup;
+        }
+
         st_ses->hw_ses_current = st_ses->hw_ses_cpe;
     } else if (v_info && (EXEC_MODE_CFG_APE == v_info->exec_mode_cfg)) {
         /*
@@ -6444,10 +6380,7 @@ int st_session_deinit(st_session_t *stc_ses)
     }
     /* deinit cpe session */
     if (st_ses->hw_ses_cpe) {
-        if (st_ses->stdev->is_gcs)
-            st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
-        else
-            st_hw_sess_lsm_deinit(st_ses->hw_ses_cpe);
+        st_hw_sess_gcs_deinit(st_ses->hw_ses_cpe);
         free(st_ses->hw_ses_cpe);
         st_ses->hw_ses_cpe = NULL;
     }

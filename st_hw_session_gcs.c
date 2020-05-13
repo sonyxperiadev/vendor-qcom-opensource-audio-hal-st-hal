@@ -3,7 +3,7 @@
  * This file implements the hw session functionality specific to HW
  * sessions that use GCS.
  *
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -556,9 +556,7 @@ static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
     }
 
     p_ses->config = stdev_cpe_pcm_config;
-    platform_stdev_check_and_update_pcm_config(p_ses->stdev->platform,
-                                               &p_ses->config, v_info,
-                                               p_ses->exec_mode);
+    platform_stdev_check_and_update_pcm_config(&p_ses->config, v_info);
 
     ALOGD("%s:[%d] calling gcs_open with uid %d, did %d", __func__,
         p_ses->sm_handle, p_gcs_ses->gcs_usecase->uid, device_acdb_id);

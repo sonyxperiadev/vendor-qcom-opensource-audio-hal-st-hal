@@ -80,7 +80,6 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_SW_MAD "sw_mad"
 #define ST_PARAM_KEY_BG_KWD "bg_kwd"
 #define ST_PARAM_KEY_ENABLE_FAILURE_DETECTION "enable_failure_detection"
-#define ST_PARAM_KEY_CPE_FE_TO_BE_FIXED "cpe_fe_to_be_fixed"
 #define ST_PARAM_KEY_RX_CONCURRENCY_DISABLED "rx_concurrency_disabled"
 #define ST_PARAM_KEY_RX_MAX_CONC_SESSIONS "rx_conc_max_st_ses"
 #define ST_PARAM_KEY_CONCURRENT_CAPTURE "concurrent_capture"
@@ -398,7 +397,6 @@ struct platform_data {
     st_xml_tags_t st_xml_tag;
     struct str_parms *kvpairs;
 
-    bool cpe_fe_to_be_fixed;
     char codec_version[15];
 
     char backend_port[ST_BACKEND_PORT_NAME_MAX_SIZE];
@@ -567,39 +565,6 @@ static int load_mulaw_decoder(sound_trigger_device_t *stdev)
     return status;
 }
 
-static int load_adpcm_decoder(sound_trigger_device_t *stdev)
-{
-    int status = 0;
-
-    stdev->adpcm_dec_lib_handle = dlopen(LIB_ADPCM_DECODER, RTLD_NOW);
-    if (!stdev->adpcm_dec_lib_handle) {
-        ALOGE("%s: ERROR. %s", __func__, dlerror());
-        return -ENODEV;
-    }
-
-    DLSYM(stdev->adpcm_dec_lib_handle, stdev->adpcm_dec_init,
-          g722_init_decoder, status);
-    if (status)
-        goto cleanup;
-    DLSYM(stdev->adpcm_dec_lib_handle, stdev->adpcm_dec_get_scratch_size,
-          g722_dec_get_total_byte_size, status);
-    if (status)
-        goto cleanup;
-    DLSYM(stdev->adpcm_dec_lib_handle, stdev->adpcm_dec_process,
-          g722_dec_process, status);
-    if (status)
-        goto cleanup;
-
-    return 0;
-
-cleanup:
-    if (stdev->adpcm_dec_lib_handle) {
-        dlclose(stdev->adpcm_dec_lib_handle);
-        stdev->adpcm_dec_lib_handle = NULL;
-    }
-    return status;
-}
-
 static int platform_stdev_set_acdb_id(void *userdata __unused, const char* device, int acdb_id)
 {
     int i, j;
@@ -745,7 +710,6 @@ static void platform_stdev_set_default_config(struct platform_data *platform)
     stdev->support_dynamic_ec_update = true;
     stdev->ec_reset_pending_cnt = 0;
 
-    platform->cpe_fe_to_be_fixed = true;
     platform->bad_mic_channel_index = 0;
     platform->be_dai_name_table = NULL;
     platform->max_be_dai_names = 0;
@@ -902,11 +866,7 @@ static int platform_stdev_set_capture_keyword_config
         ret = -EINVAL;
         goto error_exit;
     }
-    if (!strcmp(id, "ADPCM_packet")) {
-        sm_info->kw_capture_format |= ADPCM_CUSTOM_PACKET;
-    } else if (!strcmp(id, "ADPCM_raw")) {
-        sm_info->kw_capture_format |= ADPCM_RAW;
-    } else if (!strcmp(id, "MULAW_raw")) {
+    if (!strcmp(id, "MULAW_raw")) {
         sm_info->kw_capture_format |= MULAW_RAW;
     } else if (!strcmp(id, "PCM_packet")) {
         sm_info->kw_capture_format |= PCM_CUSTOM_PACKET;
@@ -994,14 +954,6 @@ static int platform_set_common_config
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_ENABLE_FAILURE_DETECTION);
         stdev->detect_failure =
-            !strncasecmp(str_value, "true", 4) ? true : false;
-    }
-
-    err = str_parms_get_str(parms, ST_PARAM_KEY_CPE_FE_TO_BE_FIXED,
-                            str_value, sizeof(str_value));
-    if (err >= 0) {
-        str_parms_del(parms, ST_PARAM_KEY_CPE_FE_TO_BE_FIXED);
-        my_data->cpe_fe_to_be_fixed =
             !strncasecmp(str_value, "true", 4) ? true : false;
     }
 
@@ -3167,13 +3119,13 @@ done:
  */
 static int clear_devices(struct listnode *devices)
 {
-    struct listnode *node = NULL;
+    struct listnode *node = NULL, *temp = NULL;
     struct audio_device_info *item = NULL;
 
     if (devices == NULL)
         return 0;
 
-    list_for_each (node, devices) {
+    list_for_each_safe (node, temp, devices) {
         item = node_to_item(node, struct audio_device_info, list);
         if (item != NULL) {
             list_remove(&item->list);
@@ -3899,12 +3851,6 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
             v_info->merge_fs_soundmodels = false;
             ALOGV("%s: ISV uuid present", __func__);
         }
-        if (!stdev->adpcm_dec_lib_handle &&
-             (v_info->kw_capture_format & ADPCM)) {
-            ret = load_adpcm_decoder(stdev);
-            if (ret)
-                goto cleanup;
-        }
         if (!stdev->mulaw_dec_lib_handle &&
              (v_info->kw_capture_format & MULAW)) {
             ret = load_mulaw_decoder(stdev);
@@ -3945,9 +3891,6 @@ cleanup_2:
 cleanup:
     if (stdev->mulaw_dec_lib_handle)
         dlclose(stdev->mulaw_dec_lib_handle);
-
-    if (stdev->adpcm_dec_lib_handle)
-        dlclose(stdev->adpcm_dec_lib_handle);
 
     if (my_data->acdb_handle)
         dlclose(my_data->acdb_handle);
@@ -4035,8 +3978,6 @@ void platform_stdev_deinit(void *platform)
         dlclose(my_data->acdb_handle);
         if (my_data->stdev->smlib_handle)
             dlclose(my_data->stdev->smlib_handle);
-        if (my_data->stdev->adpcm_dec_lib_handle)
-            dlclose(my_data->stdev->adpcm_dec_lib_handle);
         if (my_data->stdev->mulaw_dec_lib_handle)
             dlclose(my_data->stdev->mulaw_dec_lib_handle);
         audio_route_free(my_data->stdev->audio_route);
@@ -4386,6 +4327,30 @@ bool platform_get_lpi_mode(void *platform)
     return my_data->codec_backend_cfg.lpi_enable;
 }
 
+int platform_get_lpi_st_device(int st_device)
+{
+    int lpi_device = st_device;
+
+    switch (st_device) {
+    case ST_DEVICE_HANDSET_DMIC:
+        lpi_device = ST_DEVICE_HANDSET_DMIC_LPI;
+        break;
+    case ST_DEVICE_HANDSET_TMIC:
+        lpi_device = ST_DEVICE_HANDSET_TMIC_LPI;
+        break;
+    case ST_DEVICE_HANDSET_QMIC:
+        lpi_device = ST_DEVICE_HANDSET_QMIC_LPI;
+        break;
+    case ST_DEVICE_HEADSET_MIC:
+        lpi_device = ST_DEVICE_HEADSET_MIC_LPI;
+        break;
+    default:
+        ALOGV("%s: No need to convert device %d", __func__, st_device);
+    }
+
+    return lpi_device;
+}
+
 #ifdef SNDRV_IOCTL_HWDEP_VAD_CAL_TYPE
 static int platform_stdev_send_hwvad_cal
 (
@@ -4669,7 +4634,7 @@ bool platform_stdev_check_and_update_concurrency
 {
     struct platform_data *my_data;
     sound_trigger_device_t *stdev;
-    bool concurrency_ses_allowed = false;
+    bool concurrency_ses_allowed = true;
 
     if (!platform) {
         ALOGE("%s: NULL platform", __func__);
@@ -4723,15 +4688,17 @@ bool platform_stdev_check_and_update_concurrency
         }
         if (event_type == AUDIO_EVENT_PLAYBACK_STREAM_ACTIVE ||
             event_type == AUDIO_EVENT_PLAYBACK_STREAM_INACTIVE) {
-            concurrency_ses_allowed = true;
             if (stdev->rx_concurrency_disabled &&
                 stdev->rx_concurrency_active > 0 &&
                 num_sessions > stdev->rx_conc_max_st_ses)
                 concurrency_ses_allowed = false;
-        } else if (stdev->conc_capture_supported) {
-            concurrency_ses_allowed = true;
-            if ((!stdev->conc_voice_call_supported && stdev->conc_voice_active) ||
-                (!stdev->conc_voip_call_supported && stdev->conc_voip_active))
+        }
+        if (concurrency_ses_allowed) {
+            if ((!stdev->conc_capture_supported &&
+                 stdev->tx_concurrency_active > 0) ||
+                (stdev->conc_capture_supported &&
+                 ((!stdev->conc_voice_call_supported && stdev->conc_voice_active) ||
+                  (!stdev->conc_voip_call_supported && stdev->conc_voip_active))))
                 concurrency_ses_allowed = false;
         }
     } else {
@@ -4757,8 +4724,8 @@ bool platform_stdev_check_and_update_concurrency
         }
         if (stdev->conc_capture_supported)
             concurrency_ses_allowed = stdev->session_allowed;
-        else if (stdev->tx_concurrency_active == 0)
-            concurrency_ses_allowed = true;
+        else if (stdev->tx_concurrency_active > 0)
+            concurrency_ses_allowed = false;
     }
 
     /*
@@ -4783,35 +4750,14 @@ bool platform_stdev_check_and_update_concurrency
 
 void platform_stdev_check_and_update_pcm_config
 (
-   void *platform,
    struct pcm_config *config,
-   struct st_vendor_info *v_info,
-   enum st_exec_mode exec_mode
+   struct st_vendor_info *v_info
 )
 {
-    struct platform_data *my_data = (struct platform_data *)platform;
-    const char *snd_card_name;
-
     /* Update config with params in vendor info */
     config->rate = v_info->sample_rate;
     config->format = v_info->format;
     config->channels = v_info->out_channels;
-
-    if (exec_mode == ST_EXEC_MODE_CPE && !my_data->stdev->is_gcs) {
-        snd_card_name = mixer_get_name(my_data->stdev->mixer);
-        if (strstr(snd_card_name, "tomtom") ||
-            strstr(my_data->codec_version, "WCD9335_1_0") ||
-            strstr(my_data->codec_version, "WCD9335_1_1")) {
-            /* tomtom, Tasha1.0, Tasha1.1 support max 16KHz/24bit bandwidth */
-            config->rate = SOUND_TRIGGER_SAMPLING_RATE_16000;
-            if (config->format != PCM_FORMAT_S16_LE)
-                config->format = PCM_FORMAT_S24_LE;
-        } else {
-            /* Other codecs configured at ftrt 384Khz/32bit */
-            config->rate = SOUND_TRIGGER_SAMPLING_RATE_384000;
-            config->format = PCM_FORMAT_S32_LE;
-        }
-    }
 }
 
 int platform_stdev_connect_mad
@@ -4883,18 +4829,6 @@ int platform_stdev_get_hw_type(void *platform)
                 ALOGE("%s: ERROR. adsp pcm dev_id parse failed", __func__);
 
             snprintf(comp_string, USECASE_STRING_SIZE, "Listen %d Audio Service", i+1);
-        } else if (strstr(line, "CPE Listen") && (j < stdev->max_cpe_sessions)) {
-            stdev->hw_type |= ST_DEVICE_HW_CPE;
-            /* store the Back End types associated with the Front End*/
-            if (strstr(line, "ECPP"))
-                stdev->cpe_pcm_use_cases[j].pcm_back_end = CPE_PCM_BACK_END_ECPP;
-            else
-                stdev->cpe_pcm_use_cases[j].pcm_back_end = CPE_PCM_BACK_END_DEFAULT;
-
-            if (sscanf(&line[3], "%d", &dev_id) == 1)
-                stdev->cpe_pcm_use_cases[j++].pcm_id = dev_id;
-            else
-                ALOGE("%s: ERROR. cpe pcm dev_id parse failed", __func__);
         } else if (strstr(line, CAPTURE_PCM_USECASE_STRING)) {
             stdev->hw_type |= ST_DEVICE_HW_ARM;
             if (sscanf(&line[3], "%d", &dev_id) == 1)
@@ -4944,47 +4878,6 @@ int platform_stdev_get_hw_type(void *platform)
     return 0;
 }
 
-int platform_cpe_get_pcm_device_id
-(
-   void *platform,
-   int sample_rate,
-   unsigned int* use_case_idx
-)
-{
-    struct platform_data *my_data = (struct platform_data *)platform;
-    sound_trigger_device_t *stdev = my_data->stdev;
-    unsigned int i;
-    int ret = -1;
-    bool found = false;
-
-    for (i = 0; i < stdev->max_cpe_sessions; i++) {
-        if (!stdev->cpe_pcm_use_cases[i].active) {
-            /* pcm device nodes are fixed based on backend types. Check for
-            supported combination. */
-            if (my_data->cpe_fe_to_be_fixed &&
-                sample_rate == SOUND_TRIGGER_SAMPLING_RATE_48000) {
-                if (stdev->cpe_pcm_use_cases[i].pcm_back_end == CPE_PCM_BACK_END_ECPP) {
-                    found = true;
-                }
-            } else {
-                found = true;
-            }
-
-            if (found) {
-                stdev->cpe_pcm_use_cases[i].active = true;
-                ret = stdev->cpe_pcm_use_cases[i].pcm_id;
-                *use_case_idx = i;
-                break;
-            }
-        }
-    }
-
-    if (ret < 0)
-        ALOGE("%s: ERROR. no free pcm device available", __func__);
-
-    return ret;
-}
-
 int platform_ape_get_pcm_device_id
 (
    void *platform,
@@ -5023,24 +4916,6 @@ void platform_ape_free_pcm_device_id
     for (i = 0; i < stdev->max_ape_sessions; i++) {
         if (stdev->ape_pcm_use_cases[i].pcm_id == pcm_id) {
             stdev->ape_pcm_use_cases[i].active = false;
-            break;
-        }
-    }
-}
-
-void platform_cpe_free_pcm_device_id
-(
-   void *platform,
-   int pcm_id
-)
-{
-    struct platform_data *my_data = (struct platform_data *)platform;
-    sound_trigger_device_t *stdev = my_data->stdev;
-    unsigned int i;
-
-    for (i = 0; i < stdev->max_cpe_sessions; i++) {
-        if (stdev->cpe_pcm_use_cases[i].pcm_id == pcm_id) {
-            stdev->cpe_pcm_use_cases[i].active = false;
             break;
         }
     }
@@ -5692,10 +5567,12 @@ void platform_stdev_send_ec_ref_cfg
     if (is_ec_profile(profile_type)) {
         event_info.st_ec_ref_enabled = enable;
         // reset the pending active EC mixer ctls first
-        if (!stdev->audio_ec_enabled && stdev->ec_reset_pending_cnt > 0) {
-            while (stdev->ec_reset_pending_cnt--)
+        if (!stdev->audio_ec_enabled) {
+            while (stdev->ec_reset_pending_cnt > 0) {
                 audio_route_reset_and_update_path(stdev->audio_route,
                         my_data->ec_ref_mixer_path);
+                stdev->ec_reset_pending_cnt--;
+            }
         }
         if (enable) {
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);

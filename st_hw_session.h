@@ -3,7 +3,7 @@
  * This file contains the API to load sound models with
  * DSP and start/stop detection of associated key phrases.
  *
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -50,6 +50,7 @@ enum sound_trigger_states {
 
 typedef enum st_hw_sess_event_id {
     ST_HW_SESS_EVENT_DETECTED,
+    ST_HW_SESS_EVENT_BUFFERING_STOPPED,
     ST_HW_SESS_EVENT_MAX
 }  st_hw_sess_event_id_t;
 

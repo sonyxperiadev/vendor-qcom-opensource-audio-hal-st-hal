@@ -3,7 +3,7 @@
  * This file contains common functionality between
  * sound trigger hw and sound trigger extension interface.
  *
- * Copyright (c) 2016, 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016, 2018-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -414,27 +414,24 @@ int st_hw_ses_get_hist_buff_payload
     hist_buf = (struct st_hist_buffer_info *) payload_buf;
     hist_buf->version = DEFAULT_CUSTOM_CONFIG_MINOR_VERSION;
 
+    hist_buf->pre_roll_duration_msec = p_ses->sthw_cfg.client_req_preroll;
+
+    if (p_ses->is_generic_event &&
+            p_ses->sthw_cfg.client_req_preroll < PREROLL_LEN_WARNING)
+        ALOGW("%s: Client requested small preroll length %dms",
+              __func__, p_ses->sthw_cfg.client_req_preroll);
+
     if (p_ses->sthw_cfg.client_req_hist_buf > 0) {
         hist_buf->hist_buffer_duration_msec =
             p_ses->sthw_cfg.client_req_hist_buf;
-        hist_buf->pre_roll_duration_msec = p_ses->sthw_cfg.client_req_preroll;
 
-        if (p_ses->is_generic_event) {
-            if (p_ses->sthw_cfg.client_req_hist_buf <=
-                (p_ses->sthw_cfg.client_req_preroll + KW_LEN_WARNING))
-                ALOGW("%s: Client hist buf and preroll lens leave only"
-                      "%dms for keyword", __func__,
-                      (p_ses->sthw_cfg.client_req_hist_buf -
-                       p_ses->sthw_cfg.client_req_preroll));
-
-            if (p_ses->sthw_cfg.client_req_preroll < PREROLL_LEN_WARNING)
-                ALOGW("%s: Client requested small preroll length %dms",
-                    __func__, p_ses->sthw_cfg.client_req_preroll);
-        }
+        if (p_ses->is_generic_event &&
+                p_ses->sthw_cfg.client_req_hist_buf <= KW_LEN_WARNING)
+                ALOGW("%s: Client requested small hist buf length %dms",
+                      __func__, p_ses->sthw_cfg.client_req_hist_buf);
     } else {
         hist_buf->hist_buffer_duration_msec =
             p_ses->vendor_uuid_info->kw_duration;
-        hist_buf->pre_roll_duration_msec = 0;
     }
     ALOGD("%s: history buf duration %d, preroll %d", __func__,
           hist_buf->hist_buffer_duration_msec,
