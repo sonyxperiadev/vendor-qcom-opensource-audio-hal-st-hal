@@ -46,6 +46,7 @@
 #include <cutils/atomic.h>
 #include <cutils/trace.h>
 #include <system/thread_defs.h>
+#include <sound/asound.h>
 
 #include <stdarg.h>
 #include <unistd.h>
