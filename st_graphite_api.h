@@ -30,7 +30,6 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "graphite_common.h"
 
 #define GCS_DETECTION_ENGINE_CONFIG_KW_DET_ENABLE 0x1
 #define GCS_DETECTION_ENGINE_CONFIG_USER_VER_ENABLE 0x2
@@ -40,6 +39,67 @@
 #define GCS_DETECTION_ENGINE_EVENT_FAILED 1
 
 #define GCS_READ_CMDRSP_STATUS_SUCCESS 0
+
+/* st_hw_session_gcs.c:1608:61
+ * st_hw_session_gcs.c:137:68
+ */
+enum gcs_data_xfer {
+    GCS_XFER_READ,
+};
+
+/* ref: st_hw_session_gcs.c
+ * sound_trigger.sm8150 fields order -- 8.1.r1.
+ * BEWARE --- THIS IS A PACKED STRUCT, ORDER IS IMPORTANT!!!
+ */
+struct graphite_cal_header {
+    uint32_t module_id;
+    uint16_t instance_id;
+    uint16_t reserved;
+    uint32_t param_id;
+    uint32_t size;
+} __packed;
+
+struct graphite_data_cmd_hdr {
+    uint32_t module_id;
+    uint16_t instance_id;
+    uint16_t reserved;
+    uint32_t cmd_id;
+    uint32_t size_in_bytes;
+    uint32_t token;
+} __packed;
+
+struct graphite_data_cmdrsp_hdr {
+    uint32_t module_id;
+    uint16_t instance_id;
+    uint16_t reserved;
+    uint32_t cmd_id;
+    uint32_t size_in_bytes;
+    uint32_t token;
+} __packed;
+
+/*************/
+
+
+/* GCS MODULES */
+
+struct graphite_modinfo {
+    /* st_hw_session_gcs.c line 632 */
+    unsigned int MID;
+    unsigned int IID;
+};
+
+struct gcs_module_param_info { /* st_hw_session_gcs line 522 */
+    struct graphite_modinfo module_info;
+    unsigned int PID; /* st_hw_session_gcs.c line 206 */
+};
+
+struct gcs_event_rsp {
+    struct gcs_module_param_info module_param_info;
+    void *payload;
+    uint32_t payload_size; /* 32bits?? */
+};
+
+/* MODULES END */
 
 struct gcs_det_engine_config_param {
     struct graphite_cal_header cal_hdr;
