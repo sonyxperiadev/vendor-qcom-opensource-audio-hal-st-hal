@@ -48,7 +48,7 @@
 #include "sound_trigger_platform.h"
 #include "sound_trigger_hw.h"
 #include "st_graphite_api.h"
-#include "gcs_api.h"
+//#include "gcs_api.h"
 #include "st_hw_common.h"
 
 #define GCS_LIB "libgcs.so"
@@ -106,6 +106,16 @@ static struct st_session_fptrs fptrs_gcs = {
     .process_lab_capture = process_lab_capture,
     .send_detection_request = send_detection_request,
 };
+
+/* Line 170: gcs_event_cb */
+typedef int32_t(*event_cb_ptr)(uint32_t graph_hdl,
+    struct gcs_event_rsp *ev, void *private_data);
+
+/* Line 242: gcs_data_cmdrsp_cb */
+typedef int32_t(*data_cmd_cb_ptr)(uint32_t graph_handle,
+    void *rsp,
+    size_t rsp_size,
+    void *cookie, int32_t cmd_status);
 
 /* gcs functions loaded from dynamic library */
 static int32_t(*gcs_init_fn)(void);
