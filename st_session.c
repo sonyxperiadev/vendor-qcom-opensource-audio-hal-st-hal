@@ -5189,17 +5189,10 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
             st_ses->sm_handle);
         /*
          * Device switch will not wait for buffering to finish. It will instead
-         * interrupt and stop the buffering and transition to the loaded state.
-         * The loaded state will then take care of the device switch.
+         * interrupt and stop the buffering and transition to the active state.
          */
         hw_ses->fptrs->stop_buffering(hw_ses);
-        status = stop_session(st_ses, hw_ses, false);
-        if (status && !st_ses->stdev->ssr_offline_received) {
-            ALOGE("%s:[%d] failed to stop session, err %d", __func__,
-                  st_ses->sm_handle, status);
-            break;
-        }
-        STATE_TRANSITION(st_ses, loaded_state_fn);
+        STATE_TRANSITION(st_ses, active_state_fn);
         DISPATCH_EVENT(st_ses, *ev, status);
 
         /*
@@ -5214,7 +5207,7 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
                 ST_SES_EV_DEFERRED_STOP);
             stc_ses->pending_stop = false;
         }
-        st_ses->det_stc_ses->state = ST_STATE_LOADED;
+        st_ses->det_stc_ses->state = ST_STATE_ACTIVE;
         break;
 
     case ST_SES_EV_START:
