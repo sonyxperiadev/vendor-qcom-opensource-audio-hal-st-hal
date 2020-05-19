@@ -4648,8 +4648,34 @@ bool platform_stdev_check_and_update_concurrency
     }
     stdev = my_data->stdev;
 
-    /* handle CAPTURE_STREAM events */
-    if (config) {
+    if (event_type == AUDIO_EVENT_CAPTURE_DEVICE_ACTIVE ||
+        event_type == AUDIO_EVENT_CAPTURE_DEVICE_INACTIVE) {
+        /* handle CAPTURE_DEVICE events */
+        ALOGI("%s: Received DEVICE event, event type %d",
+              __func__, event_type);
+        /*
+         * for device status events, if:
+         * 1. conc audio disabled - return with false to disable VA sessions
+         * 2. conc audio enabled - due to use case type unknown, return with
+         *    current decision
+         */
+        switch (event_type) {
+            case AUDIO_EVENT_CAPTURE_DEVICE_ACTIVE:
+                stdev->tx_concurrency_active++;
+                break;
+            case AUDIO_EVENT_CAPTURE_DEVICE_INACTIVE:
+                if (stdev->tx_concurrency_active > 0)
+                    stdev->tx_concurrency_active--;
+                break;
+            default:
+                break;
+        }
+        if (stdev->conc_capture_supported)
+            concurrency_ses_allowed = stdev->session_allowed;
+        else if (stdev->tx_concurrency_active > 0)
+            concurrency_ses_allowed = false;
+    } else {
+        /* handle CAPTURE_STREAM events */
         ALOGI("%s: Received STREAM event, event type %d, usecase type %d",
               __func__, event_type, config->u.usecase.type);
         switch (event_type) {
@@ -4702,31 +4728,6 @@ bool platform_stdev_check_and_update_concurrency
                   (!stdev->conc_voip_call_supported && stdev->conc_voip_active))))
                 concurrency_ses_allowed = false;
         }
-    } else {
-        /* handle CAPTURE_DEVICE events */
-        ALOGI("%s: Received DEVICE event, event type %d",
-              __func__, event_type);
-        /*
-         * for device status events, if:
-         * 1. conc audio disabled - return with false to disable VA sessions
-         * 2. conc audio enabled - due to use case type unknown, return with
-         *    current decision
-         */
-        switch (event_type) {
-            case AUDIO_EVENT_CAPTURE_DEVICE_ACTIVE:
-                stdev->tx_concurrency_active++;
-                break;
-            case AUDIO_EVENT_CAPTURE_DEVICE_INACTIVE:
-                if (stdev->tx_concurrency_active > 0)
-                    stdev->tx_concurrency_active--;
-                break;
-            default:
-                break;
-        }
-        if (stdev->conc_capture_supported)
-            concurrency_ses_allowed = stdev->session_allowed;
-        else if (stdev->tx_concurrency_active > 0)
-            concurrency_ses_allowed = false;
     }
 
     /*
