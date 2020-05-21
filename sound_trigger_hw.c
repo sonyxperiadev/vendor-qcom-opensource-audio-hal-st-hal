@@ -1732,8 +1732,8 @@ static int check_and_configure_second_stage_models
             sizeof(SML_HeaderTypeV3) + (i * sizeof(SML_BigSoundModelTypeV3)));
 
         if (big_sm->type != ST_SM_ID_SVA_GMM) {
-            if ((big_sm->type == ST_SM_ID_SVA_VOP) &&
-                !(recognition_mode & RECOGNITION_MODE_USER_IDENTIFICATION))
+            if ((big_sm->type == SML_ID_SVA_S_STAGE_UBM || big_sm->type == ST_SM_ID_SVA_VOP) &&
+                 !(recognition_mode & RECOGNITION_MODE_USER_IDENTIFICATION))
                 continue;
 
             ss_usecase = platform_get_ss_usecase(st_ses->vendor_uuid_info, big_sm->type);

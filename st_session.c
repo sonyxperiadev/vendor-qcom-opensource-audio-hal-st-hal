@@ -2648,6 +2648,13 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
              * during only one remaining client model as there won't be a
              * merged model yet.
              */
+
+            /*
+             * User verification confidence is not required
+             * in SVA5 PDK_UV case. As first stage doesn't
+             * support user verification.
+             */
+            num_conf_levels = 1;
             memcpy(stc_ses->sm_info.cf_levels, conf_levels,
                    stc_ses->sm_info.cf_levels_size);
 
