@@ -1114,7 +1114,6 @@ static void handle_device_switch(bool connect, audio_event_info_t* config)
      * state so device switch will set up the next session with the
      * new device to be started later
      */
-    stdev->reset_backend = true;
     switch_device();
 
     pthread_mutex_unlock(&stdev->lock);
