@@ -1,6 +1,6 @@
 /* st_hw_session_pcm.h
  *
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -37,25 +37,10 @@
 
 struct sound_trigger_device;
 
-#if LINUX_ENABLED
-#define ST_FFV_CONFIG_FILE_PATH "/etc/BF_1out.cfg"
-#ifdef __LP64__
-#define FFV_LIB "/usr/lib64/libffv.so"
-#define ESP_LIB "/usr/lib64/libesp.so"
-#else
-#define FFV_LIB "/usr/lib/libffv.so"
-#define ESP_LIB "/usr/lib/libesp.so"
-#endif
-#else
-#define ST_FFV_CONFIG_FILE_PATH "/vendor/etc/BF_1out.cfg"
-#ifdef __LP64__
-#define FFV_LIB "/vendor/lib64/libffv.so"
-#define ESP_LIB "/vendor/lib64/libesp.so"
-#else
-#define FFV_LIB "/vendor/lib/libffv.so"
-#define ESP_LIB "/vendor/lib/libesp.so"
-#endif
-#endif
+
+#define ST_FFV_CONFIG_FILE_NAME "BF_1out.cfg"
+#define FFV_LIB_NAME "libffv.so"
+#define ESP_LIB_NAME "libesp.so"
 
 #define SOUND_TRIGGER_MAX_EVNT_PAYLOAD_SIZE (256)
 

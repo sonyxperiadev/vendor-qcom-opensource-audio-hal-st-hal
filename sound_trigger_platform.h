@@ -42,27 +42,17 @@ struct sound_trigger_device;
 
 #define PCM_DEVICE_FILE "/proc/asound/pcm"
 
-#define MIXER_PATH_MAX_LENGTH 100
+#define MIXER_PATH_MAX_LENGTH 128
 #define MIXER_FILE_EXT ".xml"
-#define MIXER_PATH_FILE_NAME_WCD9306 "/vendor/etc/sound_trigger_mixer_paths_wcd9306"
-#define MIXER_PATH_FILE_NAME_WCD9330 "/vendor/etc/sound_trigger_mixer_paths_wcd9330"
-
-#ifdef LINUX_ENABLED
-#define MIXER_PATH_FILE_NAME "/etc/sound_trigger_mixer_paths"
-#define MIXER_PATH_FILE_NAME_WCD9335 "/etc/sound_trigger_mixer_paths_wcd9335"
-#define MIXER_PATH_FILE_NAME_SKUW "/etc/sound_trigger_mixer_paths_skuw"
-#define MIXER_PATH_FILE_NAME_TDM "/etc/sound_trigger_mixer_paths_tdm"
-#define PLATFORM_PATH_XML "/etc/sound_trigger_platform_info.xml"
-#else
-#define MIXER_PATH_FILE_NAME "/vendor/etc/sound_trigger_mixer_paths"
-#define MIXER_PATH_FILE_NAME_WCD9335 "/vendor/etc/sound_trigger_mixer_paths_wcd9335"
-#define MIXER_PATH_FILE_NAME_SKUW "/vendor/etc/sound_trigger_mixer_paths_skuw"
-#define MIXER_PATH_FILE_NAME_TDM "/vendor/etc/sound_trigger_mixer_paths_tdm"
-#define PLATFORM_PATH_XML "/vendor/etc/sound_trigger_platform_info.xml"
-#endif
-#define MIXER_PATH_FILE_NAME_WCD9340 "/vendor/etc/sound_trigger_mixer_paths_wcd9340"
-#define MIXER_PATH_FILE_NAME_BG "/vendor/etc/sound_trigger_mixer_paths_bg"
-
+#define MIXER_PATH_FILE_NAME_WCD9306 "sound_trigger_mixer_paths_wcd9306"
+#define MIXER_PATH_FILE_NAME_WCD9330 "sound_trigger_mixer_paths_wcd9330"
+#define MIXER_PATH_FILE_NAME "sound_trigger_mixer_paths"
+#define MIXER_PATH_FILE_NAME_WCD9335 "sound_trigger_mixer_paths_wcd9335"
+#define MIXER_PATH_FILE_NAME_SKUW "sound_trigger_mixer_paths_skuw"
+#define MIXER_PATH_FILE_NAME_TDM "sound_trigger_mixer_paths_tdm"
+#define PLATFORM_PATH_XML "sound_trigger_platform_info.xml"
+#define MIXER_PATH_FILE_NAME_WCD9340 "sound_trigger_mixer_paths_wcd9340"
+#define MIXER_PATH_FILE_NAME_BG "sound_trigger_mixer_paths_bg"
 #define LIB_ACDB_LOADER "libacdbloader.so"
 #define LIB_MULAW_DECODER "libmulawdec.so"
 #define LIB_SVA_SOUNDMODEL "liblistensoundmodel2.so"
