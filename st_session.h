@@ -4,7 +4,7 @@
  * abstraction represents a single st session from the application/framework
  * point of view.
  *
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -83,8 +83,23 @@ typedef struct st_session st_session_t;
 typedef struct st_proxy_session st_proxy_session_t;
 typedef int (*st_proxy_session_state_fn_t)(st_proxy_session_t*,
                                            st_session_ev_t *ev);
+typedef struct multi_model_result_info multi_model_result_info_t;
+
+struct multi_model_result_info {
+    uint32_t minor_version;
+    uint32_t num_detected_models;
+    uint32_t detected_model_id;
+    uint32_t detected_keyword_id;
+    uint32_t best_channel_idx;
+    int32_t best_confidence_level;
+    int32_t keyword_start_idx_bytes;
+    int32_t keyword_end_idx_bytes;
+    uint32_t timestamp_lsw_us;
+    uint32_t timestamp_msw_us;
+};
 
 struct sound_model_info {
+    unsigned int model_id;
     unsigned char *sm_data;
     unsigned int sm_size;
     sound_trigger_sound_model_type_t sm_type;
@@ -96,7 +111,11 @@ struct sound_model_info {
     unsigned char *cf_levels;
     unsigned char *det_cf_levels;
     unsigned int cf_levels_size;
-    bool sm_merged;
+};
+
+struct st_proxy_ses_sm_info_wrapper {
+    struct listnode sm_list_node;
+    struct sound_model_info sm_info;
 };
 
 struct st_session {
@@ -139,6 +158,8 @@ struct st_session {
 
     st_proxy_session_t *hw_proxy_ses;
     struct sound_model_info sm_info;
+
+    st_module_type_t f_stage_version;
 };
 
 struct st_proxy_session {
@@ -151,7 +172,6 @@ struct st_proxy_session {
     bool enable_trans;
 
     struct sound_trigger_recognition_config *rc_config;
-    sound_trigger_sound_model_type_t sm_type;
     sound_model_handle_t sm_handle;
     bool lab_enabled;
     unsigned int recognition_mode;
@@ -186,9 +206,12 @@ struct st_proxy_session {
     int rc_config_update_counter;
     bool detection_requested;
 
-    struct sound_model_info sm_info;
+    struct listnode sm_info_list;
+    bool sm_merged;
     FILE *lab_fp;
     uint64_t detection_event_time;
+
+    st_module_type_t f_stage_version;
 };
 
 /*

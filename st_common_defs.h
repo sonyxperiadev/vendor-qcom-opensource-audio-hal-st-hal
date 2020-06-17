@@ -113,6 +113,8 @@ do {\
 
 #define KEY_ID_CONFIDENCE_LEVELS (0x2000)
 #define KEY_ID_KEYWORD_POSITION_STATS (0x2001)
+#define KEY_ID_TIMESTAMP_INFO (0x2002)
+#define KEY_ID_MULTI_MODEL_RESULT_INFO (0x2004)
 
 #define DLSYM(handle, ptr, symbol, err) \
 do {\
