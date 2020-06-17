@@ -2506,8 +2506,14 @@ static int stdev_start_recognition
     else
         status = st_session_restart(st_session);
 
-    if (status)
+    if (status) {
+        /*
+         * still return success to sound trigger service, as session
+         * can be resumed internally due to SSR or PDR
+         */
+        status = 0;
         ALOGE("%s: failed to (re)start session", __func__);
+    }
 
     if (backend_cfg_change) {
         ALOGV("%s: backend config change, start existing sessions", __func__);
