@@ -1659,8 +1659,9 @@ st_session_t* get_detected_client(st_proxy_session_t *st_ses,
                     if (c_ses->sm_info.model_id ==
                         result_info->detected_model_id) {
                         if (c_ses->state == ST_STATE_ACTIVE) {
-                            ALOGV("%s: detected c%d", __func__,
-                                c_ses->sm_handle);
+                            ALOGD("%s: detected c%d, 1st stage conf level = %d",
+                                __func__, c_ses->sm_handle,
+                                result_info->best_confidence_level);
                             return c_ses;
                         } else {
                             ALOGE("%s: detected c%d is not active", __func__,
@@ -4454,6 +4455,13 @@ static int init_st_hw_config(st_hw_session_t *hw_ses, uint32_t model_id)
     struct st_hw_ses_config *sthw_cfg = NULL;
     int status;
 
+    sthw_cfg = get_sthw_cfg_for_model_id(hw_ses, model_id);
+    if (sthw_cfg) {
+        ALOGD("%s: Already initialized sthw_cfg with m_id[%d]",
+            __func__, model_id);
+        return 0;
+    }
+
     sthw_cfg = calloc(1, sizeof(struct st_hw_ses_config));
     if (!sthw_cfg) {
         ALOGE("%s: Failed to allocate struct st_hw_ses_config, exiting",
@@ -4778,8 +4786,12 @@ static int idle_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
          * state.
          */
         for (int i = 0; i < REG_SM_RETRY_CNT; i++) {
-            status = ret = hw_ses->fptrs->reg_sm(hw_ses, p_info->sm_info.sm_data,
-                p_info->sm_info.sm_size, p_info->sm_info.model_id);
+            if (stc_ses->pending_load)
+                status = ret = reg_all_sm(st_ses, hw_ses);
+            else
+                status = ret = hw_ses->fptrs->reg_sm(hw_ses, p_info->sm_info.sm_data,
+                    p_info->sm_info.sm_size, p_info->sm_info.model_id);
+
             if (ret) {
                 if (st_ses->stdev->ssr_offline_received) {
                     STATE_TRANSITION(st_ses, ssr_state_fn);
@@ -6019,8 +6031,6 @@ static int ssr_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         if (is_any_client_not_pending_load(st_ses))
             break;
 
-        reset_clients_pending_load(st_ses);
-
         STATE_TRANSITION(st_ses, idle_state_fn);
 
         if ((stc_ses->ssr_transit_exec_mode == ST_EXEC_MODE_CPE) ||
@@ -6028,22 +6038,27 @@ static int ssr_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
             exec_mode_ev.stc_ses = stc_ses;
             exec_mode_ev.payload.exec_mode = stc_ses->ssr_transit_exec_mode;
             DISPATCH_EVENT(st_ses, exec_mode_ev, status);
-            if (status)
+            if (status) {
+                reset_clients_pending_load(st_ses);
                 break;
+            }
             stc_ses->ssr_transit_exec_mode = ST_EXEC_MODE_NONE;
         }
         active = is_any_client_in_state(st_ses, ST_STATE_ACTIVE);
         if (active || is_any_client_in_state(st_ses, ST_STATE_LOADED)) {
             load_ev.stc_ses = stc_ses;
             DISPATCH_EVENT(st_ses, load_ev, status);
-            if (status)
+            if (status) {
+                reset_clients_pending_load(st_ses);
                 break;
+            }
         }
         if (active) {
             start_ev.stc_ses = stc_ses;
             DISPATCH_EVENT(st_ses, start_ev, status);
         }
 
+        reset_clients_pending_load(st_ses);
         break;
 
     case ST_SES_EV_LOAD_SM:
