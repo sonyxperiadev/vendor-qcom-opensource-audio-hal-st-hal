@@ -2191,22 +2191,24 @@ static int platform_stdev_set_lsm_params
 
     /* Get the last added vendor_info node */
     sm_info_node = list_tail(&my_data->stdev->vendor_uuid_list);
-    if (sm_info_node) {
+    if (sm_info_node)
         sm_info = node_to_item(sm_info_node, struct st_vendor_info, list_node);
-    } else {
+
+    if (!sm_info) {
         ALOGE("%s: found NULL sm_info", __func__);
-        ret = -EINVAL;
-        goto err_exit;
+        free(kv_pairs);
+        return -EINVAL;
     }
 
     /* Get the last added lsm_params node */
     lsm_params_node = list_tail(&sm_info->lsm_usecase_list);
-    if (lsm_params_node) {
+    if (lsm_params_node)
         lsm_params = node_to_item(lsm_params_node, struct st_lsm_params, list_node);
-    } else {
+
+    if (!lsm_params) {
         ALOGE("%s: found NULL lsm_params", __func__);
-        ret = -EINVAL;
-        goto err_exit;
+        free(kv_pairs);
+        return -EINVAL;
     }
 
     err = str_parms_get_str(parms, ST_PARAM_KEY_EXECUTION_MODE,
@@ -2453,8 +2455,7 @@ err_exit:
         list_remove(module_node);
         free(module_params);
     }
-    if (lsm_params)
-        free(lsm_params);
+    free(lsm_params);
     free(kv_pairs);
     return ret;
 }
