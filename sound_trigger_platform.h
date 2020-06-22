@@ -76,6 +76,7 @@ struct sound_trigger_device;
 #define PLATFORM_XML_VERSION_0x0102 0x0102
 #define PLATFORM_XML_VERSION_0x0103 0x0103
 #define PLATFORM_XML_VERSION_0x0105 0x0105
+#define PLATFORM_XML_VERSION_0x0106 0x0106
 
 /* Default ACDB ids. TODO-V: can be removed as default xml is anyway hosting these */
 #define DEVICE_HANDSET_APE_ACDB_ID   (127)
@@ -279,13 +280,28 @@ typedef enum {
     ST_PLATFORM_LPI_DISABLE_AND_BARGE_IN
 } st_platform_lpi_enable_t;
 
+typedef enum {
+    ST_MODULE_TYPE_CUSTOM = 1,
+    ST_MODULE_TYPE_GMM = 3,
+    ST_MODULE_TYPE_PDK5 = 5
+} st_module_type_t;
+
+struct st_module_params {
+    struct listnode list_node;
+    int type;
+    int param_tag_tracker;
+    struct st_module_param_info params[MAX_PARAM_IDS];
+};
+
 struct st_lsm_params {
     struct listnode list_node;
     st_exec_mode_t exec_mode;
     int app_type;
+    int pdk5_app_type;
     int in_channels;
     int in_channels_lpi;
     int param_tag_tracker;
+    struct listnode module_params_list;
     struct st_module_param_info params[MAX_PARAM_IDS];
     st_profile_type_t adm_cfg_profile;
     audio_devices_t capture_device;
@@ -682,7 +698,8 @@ void platform_get_lsm_usecase
    struct st_vendor_info* v_info,
    struct st_lsm_params** lsm_usecase,
    st_exec_mode_t exec_mode,
-   bool lpi_enable
+   bool lpi_enable,
+   st_module_type_t sm_version
 );
 
 int platform_stdev_get_xml_version(void* platform);

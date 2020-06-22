@@ -6,7 +6,7 @@
  * retrieves the detection results via capi wrappers and notifies the
  * sound trigger state machine.
  *
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -382,21 +382,23 @@ static int start_user_verification(st_arm_second_stage_t *st_sec_stage)
         goto exit;
     }
 
-    uv_cfg_ptr->sva_uv_confidence_score =
-        ss_session->st_ses->hw_ses_current->user_level;
-    capi_uv_ptr.data_ptr = (int8_t *)uv_cfg_ptr;
-    capi_uv_ptr.actual_data_len = sizeof(voiceprint2_sva_uv_score_t);
-    capi_uv_ptr.max_data_len = sizeof(voiceprint2_sva_uv_score_t);
+    if (ss_session->st_ses->hw_ses_current->f_stage_version == ST_MODULE_TYPE_GMM) {
+        uv_cfg_ptr->sva_uv_confidence_score =
+            ss_session->st_ses->hw_ses_current->user_level;
+        capi_uv_ptr.data_ptr = (int8_t *)uv_cfg_ptr;
+        capi_uv_ptr.actual_data_len = sizeof(voiceprint2_sva_uv_score_t);
+        capi_uv_ptr.max_data_len = sizeof(voiceprint2_sva_uv_score_t);
 
-    ALOGV("%s: Issuing capi_set_param for param %d, uv_conf_score %f", __func__,
-        VOICEPRINT2_ID_SVA_UV_SCORE, uv_cfg_ptr->sva_uv_confidence_score);
-    rc = ss_session->capi_handle->vtbl_ptr->set_param(ss_session->capi_handle,
-        VOICEPRINT2_ID_SVA_UV_SCORE, NULL, &capi_uv_ptr);
-    if (CAPI_V2_EOK != rc) {
-        ALOGE("%s: set_param VOICEPRINT2_ID_SVA_UV_SCORE failed, result = %d",
-            __func__, rc);
-        ret = -EINVAL;
-        goto exit;
+        ALOGV("%s: Issuing capi_set_param for param %d, uv_conf_score %f", __func__,
+            VOICEPRINT2_ID_SVA_UV_SCORE, uv_cfg_ptr->sva_uv_confidence_score);
+        rc = ss_session->capi_handle->vtbl_ptr->set_param(ss_session->capi_handle,
+            VOICEPRINT2_ID_SVA_UV_SCORE, NULL, &capi_uv_ptr);
+        if (CAPI_V2_EOK != rc) {
+            ALOGE("%s: set_param VOICEPRINT2_ID_SVA_UV_SCORE failed, result = %d",
+               __func__, rc);
+            ret = -EINVAL;
+            goto exit;
+        }
     }
 
     while (!ss_session->exit_buffering) {
@@ -806,8 +808,10 @@ int st_second_stage_stop_session(st_arm_second_stage_t *st_sec_stage)
     int status = 0;
     capi_v2_err_t rc;
 
-    if ((st_sec_stage->ss_info->sm_detection_type ==
-         ST_SM_TYPE_USER_VERIFICATION) &&
+    if (((st_sec_stage->ss_info->sm_detection_type ==
+          ST_SM_TYPE_USER_VERIFICATION) ||
+         (st_sec_stage->ss_info->sm_detection_type ==
+          ST_SM_TYPE_KEYWORD_DETECTION)) &&
         !st_sec_stage->stdev->ssr_offline_received) {
         ALOGV("%s: Issuing capi_end", __func__);
         rc = st_sec_stage->ss_session->capi_handle->vtbl_ptr->end(

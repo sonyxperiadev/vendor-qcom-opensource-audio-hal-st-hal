@@ -413,22 +413,21 @@ int st_hw_ses_get_hist_buff_payload
 
     hist_buf = (struct st_hist_buffer_info *) payload_buf;
     hist_buf->version = DEFAULT_CUSTOM_CONFIG_MINOR_VERSION;
-
-    hist_buf->pre_roll_duration_msec = p_ses->sthw_cfg.client_req_preroll;
+    hist_buf->pre_roll_duration_msec = p_ses->max_preroll;
 
     if (p_ses->is_generic_event &&
-            p_ses->sthw_cfg.client_req_preroll < PREROLL_LEN_WARNING)
+        p_ses->max_preroll < PREROLL_LEN_WARNING)
         ALOGW("%s: Client requested small preroll length %dms",
-              __func__, p_ses->sthw_cfg.client_req_preroll);
+              __func__,  p_ses->max_preroll);
 
-    if (p_ses->sthw_cfg.client_req_hist_buf > 0) {
+    if (p_ses->max_hist_buf > 0) {
         hist_buf->hist_buffer_duration_msec =
-            p_ses->sthw_cfg.client_req_hist_buf;
+            p_ses->max_hist_buf;
 
         if (p_ses->is_generic_event &&
-                p_ses->sthw_cfg.client_req_hist_buf <= KW_LEN_WARNING)
-                ALOGW("%s: Client requested small hist buf length %dms",
-                      __func__, p_ses->sthw_cfg.client_req_hist_buf);
+            p_ses->max_hist_buf <= KW_LEN_WARNING)
+            ALOGW("%s: Client requested small hist buf length %dms",
+                  __func__,  p_ses->max_hist_buf);
     } else {
         hist_buf->hist_buffer_duration_msec =
             p_ses->vendor_uuid_info->kw_duration;

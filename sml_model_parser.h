@@ -6,7 +6,7 @@
  * big sound model version 3. These are used in STHAL to parse
  * out the individual sound models' raw data.
  *
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -92,6 +92,7 @@ typedef enum {
     ST_SM_ID_SVA_VOP      = 0x0004,
     ST_SM_ID_SVA_RNN      = 0x0008,
     ST_SM_ID_SVA_KWD      = 0x000A,            //ST_SM_ID_SVA_CNN | ST_SM_ID_SVA_RNN
+    SML_ID_SVA_S_STAGE_UBM = 0x0010,
     ST_SM_ID_SVA_END      = 0x00F0,
     ST_SM_ID_CUSTOM_START = 0x0100,
     ST_SM_ID_CUSTOM_END   = 0xF000,
@@ -112,7 +113,8 @@ typedef struct _SML_HeaderTypeV3 {
 } SML_HeaderTypeV3;
 
 typedef struct _SML_BigSoundModelTypeV3 {
-    uint32_t version;                           // version of sound model ( always 3 for now )
+    uint16_t versionMajor;                      // major version of sound model
+    uint16_t versionMinor;                      // minor version of sound model
     uint32_t offset;                            // start address of model data
     uint32_t size;                              // model size
     listen_model_indicator_enum type;           // type : Lower 1 byte : 1Stage KW model,

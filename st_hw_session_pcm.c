@@ -73,13 +73,11 @@ typedef union {
 } st_get_param_payload_t;
 
 static int reg_sm(st_hw_session_t* p_ses, void *sm_data,
-    unsigned int sm_size,
-    sound_trigger_sound_model_type_t sm_type);
+    unsigned int sm_size, uint32_t model_id);
 static int reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mode,
-    bool capture_requested, struct sound_trigger_recognition_config *rc_config,
-    sound_trigger_sound_model_type_t sm_type, void *sm_data);
+    bool capture_requested, struct sound_trigger_recognition_config *rc_config);
 
-static int dereg_sm(st_hw_session_t* p_ses);
+static int dereg_sm(st_hw_session_t* p_ses,uint32_t model_id __unused);
 static int dereg_sm_params(st_hw_session_t* p_ses);
 static int start(st_hw_session_t* p_ses);
 static int stop(st_hw_session_t* p_ses);
@@ -90,8 +88,7 @@ static int disable_device(st_hw_session_t *p_ses, bool setting_device);
 static int enable_device(st_hw_session_t *p_ses, bool setting_device);
 static void process_lab_capture(st_hw_session_t *p_ses);
 static int restart(st_hw_session_t* p_ses, unsigned int recognition_mode,
-    struct sound_trigger_recognition_config *rc_config __unused,
-    sound_trigger_sound_model_type_t sm_type, void *sm_data __unused);
+    struct sound_trigger_recognition_config *rc_config __unused);
 static int read_pcm(st_hw_session_t *p_ses,
     unsigned char *buf,
     unsigned int bytes);
@@ -1237,7 +1234,7 @@ static int sound_trigger_set_device
 }
 
 static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
-    unsigned int sm_size, sound_trigger_sound_model_type_t sm_type __unused)
+    unsigned int sm_size, uint32_t model_id __unused)
 {
     int status = 0;
     st_hw_session_pcm_t *p_pcm_ses =
@@ -1418,7 +1415,7 @@ sm_error_1:
     return status;
 }
 
-static int dereg_sm(st_hw_session_t *p_ses)
+static int dereg_sm(st_hw_session_t *p_ses, uint32_t model_id __unused)
 {
     int status = 0;
     st_hw_session_pcm_t *p_pcm_ses =
@@ -1476,8 +1473,7 @@ static int dereg_sm(st_hw_session_t *p_ses)
 }
 
 static int reg_sm_params(st_hw_session_t* p_ses, unsigned int recognition_mode __unused,
-    bool capture_requested, struct sound_trigger_recognition_config *rc_config __unused,
-    sound_trigger_sound_model_type_t sm_type __unused, void *sm_data __unused)
+    bool capture_requested, struct sound_trigger_recognition_config *rc_config __unused)
 {
     int status = 0;
     st_hw_session_pcm_t *p_pcm_ses =
@@ -1719,8 +1715,7 @@ static int stop_buffering(st_hw_session_t* p_ses)
 }
 
 static int restart(st_hw_session_t* p_ses, unsigned int recognition_mode __unused,
-   struct sound_trigger_recognition_config *rc_config __unused,
-   sound_trigger_sound_model_type_t sm_type __unused, void *sm_data __unused)
+   struct sound_trigger_recognition_config *rc_config __unused)
 {
     st_hw_session_pcm_t *p_pcm_ses =
        (st_hw_session_pcm_t *)p_ses;
