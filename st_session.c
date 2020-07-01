@@ -232,7 +232,8 @@ void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
         do {
             lock_status = pthread_mutex_trylock(&st_ses->lock);
         } while (lock_status && !st_ses->det_stc_ses->pending_stop &&
-                 (st_ses->current_state == buffering_state_fn));
+                 (st_ses->current_state == buffering_state_fn) &&
+                 !st_ses->stdev->ssr_offline_received);
 
         if (st_ses->det_stc_ses->pending_stop)
             ALOGV("%s:[%d] pending stop already queued, ignore event",
@@ -243,6 +244,9 @@ void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
         else if (st_ses->current_state != buffering_state_fn)
             ALOGV("%s:[%d] session already stopped buffering, ignore event",
                 __func__, st_ses->sm_handle);
+        else if (st_ses->stdev->ssr_offline_received)
+            ALOGV("%s:[%d] SSR handling in progress, ignore event",
+                  __func__, st_ses->sm_handle);
         else if (!lock_status)
             DISPATCH_EVENT(st_ses, ev, status);
 
