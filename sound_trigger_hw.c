@@ -749,12 +749,14 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
     unsigned int num_sessions = 0;
     struct audio_device_info *item = NULL;
 
-    if (config != NULL) {
-        ALOGV("%s: Event type = %d", __func__, event_type);
-        list_for_each (node, &config->device_info.devices) {
-            item = node_to_item(node, struct audio_device_info, list);
-            ALOGV("%s: Audio device = 0x%x", __func__, item->type);
-        }
+    if (config == NULL) {
+        ALOGE("%s: Config is NULL, exiting", __func__);
+        return;
+    }
+
+    list_for_each (node, &config->device_info.devices) {
+        item = node_to_item(node, struct audio_device_info, list);
+        ALOGV("%s: Audio device = 0x%x", __func__, item->type);
     }
 
     /*
