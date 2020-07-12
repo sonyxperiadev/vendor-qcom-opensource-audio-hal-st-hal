@@ -81,6 +81,8 @@ static unsigned int stdev_ref_cnt = 0;
 static pthread_mutex_t stdev_init_lock;
 static struct sound_trigger_device *stdev = NULL;
 
+static struct sound_trigger_properties_extended_1_3 hw_properties_extended;
+
 /* default properties which will later be updated based on platform configuration */
 static struct sound_trigger_properties hw_properties = {
         "QUALCOMM Technologies, Inc", // implementor
@@ -1300,6 +1302,7 @@ static int stdev_get_properties(const struct sound_trigger_hw_device *dev,
 
     memcpy(properties, stdev->hw_properties,
            sizeof(struct sound_trigger_properties));
+    hw_properties_extended.header.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_0;
     return 0;
 }
 
@@ -1518,15 +1521,26 @@ static bool compare_recognition_config
      * configs. So all the values must be checked instead of a memcmp of the
      * whole configs.
      */
+
+    /*
+     * Extra uint32_t is added in memcmp as opaque data config starts after
+     * audio_capabilities as per SOUND_TRIGGER_DEVICE_API_VERSION_1_3
+     */
+
     if ((current_config->capture_handle != new_config->capture_handle) ||
         (current_config->capture_device != new_config->capture_device) ||
         (current_config->capture_requested != new_config->capture_requested) ||
         (current_config->num_phrases != new_config->num_phrases) ||
         (current_config->data_size != new_config->data_size) ||
         (current_config->data_offset != new_config->data_offset) ||
-        memcmp((char *) current_config + current_config->data_offset,
+        (hw_properties_extended.header.version == SOUND_TRIGGER_DEVICE_API_VERSION_1_3 &&
+         memcmp((char *) current_config + current_config->data_offset,
+               (char *) new_config + sizeof(struct sound_trigger_recognition_config) +
+                sizeof(uint32_t), current_config->data_size)) ||
+        (hw_properties_extended.header.version == SOUND_TRIGGER_DEVICE_API_VERSION_1_0 &&
+         memcmp((char *) current_config + current_config->data_offset,
                (char *) new_config + new_config->data_offset,
-               current_config->data_size)) {
+               current_config->data_size))) {
         return false;
     } else {
         for (i = 0; i < current_config->num_phrases; i++) {
@@ -2445,8 +2459,28 @@ static int stdev_start_recognition
         }
 
         memcpy(st_session->rc_config, (char *)config, sizeof(*config));
-        memcpy((char *)st_session->rc_config + st_session->rc_config->data_offset,
-           (char *)config + config->data_offset, config->data_size);
+
+        /*
+         * SOUND_TRIGGER_DEVICE_API_VERSION_1_3 version introduced new strucutre
+         * sound_trigger_recognition_config_extended_1_3 containing header and base,
+         * so the data_offset for opaque data is relative to this new structure,
+         * leading to extra 12 bytes (8 bytes for header and 4 bytes for audio_capabilities)
+         * w.r.t recoginition config structure. So the extra bytes need to be subtracted
+         * from the data_offset passed considering new strucutre. Opaque data starts after
+         * audio_capabilities variable in sound_trigger_recognition_config_extended_1_3
+         */
+        if (hw_properties_extended.header.version == SOUND_TRIGGER_DEVICE_API_VERSION_1_3) {
+            st_session->rc_config->data_offset -= (sizeof(struct sound_trigger_recognition_config_header) +
+                                                   sizeof(uint32_t));
+
+            memcpy((char *)st_session->rc_config + st_session->rc_config->data_offset,
+                    (char *)config + config->data_offset -
+                    sizeof(struct sound_trigger_recognition_config_header),
+                    config->data_size);
+        } else {
+            memcpy((char *)st_session->rc_config + st_session->rc_config->data_offset,
+                   (char *)config + config->data_offset, config->data_size);
+        }
 
         ALOGVV("%s: num_phrases=%d, id=%d", __func__,
                st_session->rc_config->num_phrases,
@@ -2538,6 +2572,21 @@ exit:
     ATRACE_END();
     ALOGD("%s:[%d] Exit", __func__, sound_model_handle);
     return status;
+}
+
+static int stdev_start_recognition_extended
+(
+    const struct sound_trigger_hw_device *dev,
+    sound_model_handle_t sound_model_handle,
+    const struct sound_trigger_recognition_config_header *config,
+    recognition_callback_t callback,
+    void *cookie
+)
+{
+    return stdev_start_recognition(dev, sound_model_handle,
+           &((struct sound_trigger_recognition_config_extended_1_3 *)config)->base,
+           callback, cookie);
+
 }
 
 static int stdev_stop_recognition(const struct sound_trigger_hw_device *dev,
@@ -2633,6 +2682,129 @@ exit:
     return 0;
 }
 
+static int stdev_stop_all_recognitions(const struct sound_trigger_hw_device* dev __unused)
+{
+    ALOGV("%s: unsupported API", __func__);
+    return -ENOSYS;
+}
+
+static int stdev_get_parameter(const struct sound_trigger_hw_device *dev __unused,
+    sound_model_handle_t sound_model_handle __unused,
+    sound_trigger_model_parameter_t model_param __unused, int32_t* value __unused)
+{
+    ALOGV("%s: unsupported API", __func__);
+    return -EINVAL;
+}
+
+static int stdev_set_parameter(const struct sound_trigger_hw_device *dev __unused,
+    sound_model_handle_t sound_model_handle __unused,
+    sound_trigger_model_parameter_t model_param __unused, int32_t value __unused)
+{
+    ALOGV("%s: unsupported API", __func__);
+    return -EINVAL;
+}
+
+static int stdev_query_parameter(const struct sound_trigger_hw_device *dev __unused,
+    sound_model_handle_t sound_model_handle __unused,
+    sound_trigger_model_parameter_t  model_param __unused,
+    sound_trigger_model_parameter_range_t* param_range)
+{
+    if (param_range)
+        param_range->is_supported = false;
+    return 0;
+}
+
+static const struct sound_trigger_properties_header*
+stdev_get_properties_extended(const struct sound_trigger_hw_device *dev)
+{
+    struct st_vendor_info *v_info = NULL;
+    struct listnode *v_node = NULL;
+    struct sound_trigger_device *stdev = NULL;
+    sound_model_handle_t handle = 0;
+    st_session_t *st_session = NULL;
+    struct sound_trigger_properties_header *prop_hdr = NULL;
+    int status = 0;
+
+    ALOGI("%s: enter", __func__);
+
+    if (!dev) {
+        ALOGW("%s: invalid sound_trigger_hw_device received", __func__);
+        return NULL;
+    }
+
+    stdev = (struct sound_trigger_device *)dev;
+    prop_hdr = (struct sound_trigger_properties_header *)&hw_properties_extended;
+    status = stdev_get_properties(dev, &hw_properties_extended.base);
+    if (status) {
+        ALOGW("%s: Failed to initialize the stdev properties", __func__);
+        return NULL;
+    }
+    hw_properties_extended.header.size = sizeof(struct sound_trigger_properties_extended_1_3);
+    hw_properties_extended.audio_capabilities = 0;
+    hw_properties_extended.header.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_3;
+
+    /*
+     * The below code is to get hotword algo version from ADSP. In case of any
+     * errors in  getting the version, return base properties as its not harmful
+     * to bail out STHAL feature with version failure.
+     */
+
+    pthread_mutex_lock(&stdev->lock);
+    if (!CHECK_BIT(stdev->hw_type,
+            ST_DEVICE_HW_APE|ST_DEVICE_HW_CPE|ST_DEVICE_HW_ARM)) {
+        status = platform_stdev_get_hw_type(stdev->platform);
+        if (status) {
+            ALOGW("%s: get hw type failed, %d", __func__, status);
+            goto exit_2;
+        }
+    }
+    list_for_each(v_node, &stdev->vendor_uuid_list) {
+        v_info = node_to_item(v_node, struct st_vendor_info, list_node);
+        if (v_info->get_module_version) {
+            st_session = calloc(1, sizeof(st_session_t));
+            if (!st_session) {
+                ALOGW("%s: st_session allocation failed", __func__);
+                goto exit_2;
+            }
+
+            st_session->f_stage_version = ST_MODULE_TYPE_CUSTOM;
+            st_session->vendor_uuid_info = v_info;
+            handle = android_atomic_inc(&stdev->session_id);
+
+            status = st_session_init(st_session, stdev, ST_EXEC_MODE_ADSP, handle);
+            if (status) {
+                ALOGW("%s: failed to initialize st_session with error %d", __func__,
+                      status);
+                goto exit_1;
+            }
+
+            status = st_session_get_module_version(st_session, hw_properties_extended.supported_model_arch);
+            if (status) {
+                ALOGW("%s: failed to get module version with error %d", __func__,
+                      status);
+                goto exit;
+            }
+            ALOGV("%s: version is %s", __func__, hw_properties_extended.supported_model_arch);
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&stdev->lock);
+    return prop_hdr;
+
+exit:
+    st_session_deinit(st_session);
+
+exit_1:
+    android_atomic_dec(&stdev->session_id);
+    free(st_session);
+    st_session = NULL;
+
+exit_2:
+    pthread_mutex_unlock(&stdev->lock);
+    return prop_hdr;
+}
+
 static int stdev_open(const hw_module_t* module, const char* name,
                      hw_device_t** device)
 {
@@ -2721,7 +2893,7 @@ static int stdev_open(const hw_module_t* module, const char* name,
     }
 
     stdev->device.common.tag = HARDWARE_DEVICE_TAG;
-    stdev->device.common.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_0;
+    stdev->device.common.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_3;
     stdev->device.common.module = (struct hw_module_t *) module;
     stdev->device.common.close = stdev_close;
     stdev->device.get_properties = stdev_get_properties;
@@ -2729,6 +2901,13 @@ static int stdev_open(const hw_module_t* module, const char* name,
     stdev->device.unload_sound_model = stdev_unload_sound_model;
     stdev->device.start_recognition = stdev_start_recognition;
     stdev->device.stop_recognition = stdev_stop_recognition;
+    stdev->device.get_properties_extended = stdev_get_properties_extended;
+    stdev->device.start_recognition_extended = stdev_start_recognition_extended;
+    stdev->device.stop_all_recognitions = stdev_stop_all_recognitions;
+    stdev->device.get_parameter = stdev_get_parameter;
+    stdev->device.set_parameter = stdev_set_parameter;
+    stdev->device.query_parameter = stdev_query_parameter;
+
 #ifdef ST_SUPPORT_GET_MODEL_STATE
     stdev->device.get_model_state = stdev_get_model_state;
 #endif

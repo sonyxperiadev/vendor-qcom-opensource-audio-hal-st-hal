@@ -73,6 +73,12 @@ static int ape_dereg_sm_params(st_hw_session_t* p_ses);
 static int ape_start(st_hw_session_t* p_ses);
 static int ape_stop(st_hw_session_t* p_ses);
 static int ape_stop_buffering(st_hw_session_t* p_ses);
+static int ape_open_session(st_hw_session_t* p_ses);
+static void ape_close_session(st_hw_session_t* p_ses);
+#ifdef SNDRV_LSM_GET_MODULE_PARAMS
+static int ape_get_module_version(st_hw_session_t *p_ses, void *param_info_payload,
+                       size_t size);
+#endif
 
 /* Routing layer functions */
 static int route_reg_sm_ape(st_hw_session_t *p_ses,
@@ -134,6 +140,11 @@ struct st_session_fptrs ape_fptrs = {
     .enable_device = route_enable_device,
     .get_param_data = get_param_data,
     .send_detection_request = send_detection_request,
+    .open_session = ape_open_session,
+    .close_session = ape_close_session,
+#ifdef SNDRV_LSM_GET_MODULE_PARAMS
+    .get_module_version = ape_get_module_version,
+#endif
 };
 
 int pcm_ioctl(struct pcm *pcm, int request, ...)
@@ -189,6 +200,41 @@ static int lsm_set_session_data_v2(st_hw_session_t *p_ses)
                   __func__, status);
     return status;
 }
+
+#ifdef SNDRV_LSM_GET_MODULE_PARAMS
+static void lsm_fill_get_param_info
+(
+    uint32_t param_type,
+    struct lsm_params_get_info *p_info,
+    struct st_module_param_info *mparams,
+    uint16_t stage_idx
+)
+{
+    p_info->param_type = param_type;
+    p_info->module_id = mparams->module_id;
+    p_info->instance_id = mparams->instance_id;
+    p_info->param_id = mparams->param_id;
+    p_info->stage_idx = stage_idx;
+}
+
+static int lsm_get_module_params
+(
+    st_hw_session_lsm_t *p_lsm_ses,
+    struct lsm_params_get_info *lsm_params
+)
+{
+    int status = 0;
+
+    ATRACE_BEGIN("sthal:lsm: pcm_ioctl sndrv_lsm_get_module_params");
+    status = pcm_ioctl(p_lsm_ses->pcm, SNDRV_LSM_GET_MODULE_PARAMS, lsm_params);
+    ATRACE_END();
+
+    if (status)
+        ALOGE("%s: ERROR. SNDRV_LSM_GET_MODULE_PARAMS status(%d)",
+              __func__, status);
+    return status;
+}
+#endif
 
 static void lsm_fill_param_info
 (
@@ -2562,6 +2608,144 @@ static int ape_stop_buffering(st_hw_session_t* p_ses)
     ALOGD("%s:[%d] Exit, status=%d", __func__, p_ses->sm_handle, status);
     return status;
 }
+
+#ifdef SNDRV_LSM_GET_MODULE_PARAMS
+static int ape_open_session(st_hw_session_t *p_ses)
+{
+    st_hw_session_lsm_t *p_lsm_ses = (st_hw_session_lsm_t*)p_ses;
+    struct st_vendor_info *v_info = p_ses->vendor_uuid_info;
+    int status = 0;
+    audio_devices_t capture_device = 0;
+
+    status = platform_get_lsm_usecase(p_ses->stdev->platform, v_info,
+        &p_lsm_ses->lsm_usecase, p_ses->exec_mode, p_ses->lpi_enable,
+        p_ses->f_stage_version);
+
+    if (status) {
+        ALOGE("%s: couldn't get lsm usecase", __func__);
+        return -EINVAL;
+    }
+
+    p_lsm_ses->pcm_id = platform_ape_get_pcm_device_id(
+        p_ses->stdev->platform, &p_ses->use_case_idx);
+    if (p_lsm_ses->pcm_id < 0) {
+        ALOGE("%s: get pcm id failed %d\n",__func__, p_lsm_ses->pcm_id);
+        return -ENODEV;
+    }
+
+    int app_type = (v_info->app_type == 0) ?
+        p_lsm_ses->lsm_usecase.app_type : v_info->app_type;
+
+    capture_device = platform_stdev_get_capture_device(p_ses->stdev->platform);
+    status = platform_stdev_send_calibration(p_ses->stdev->platform,
+                                              capture_device,
+                                              p_ses->exec_mode,
+                                              p_ses->vendor_uuid_info,
+                                              app_type, true,
+                                              ST_SESSION_CAL);
+
+    if (status) {
+        ALOGE("%s: ERROR. sending calibration failed status %d, idx 0",
+              __func__, status);
+        goto error;
+    }
+    p_lsm_ses->num_stages = 1;
+    p_lsm_ses->common.config = stdev_ape_pcm_config;
+    platform_stdev_check_and_update_pcm_config(&p_lsm_ses->common.config,
+                                               v_info);
+
+    ALOGD("%s: opening pcm device=%d", __func__, p_lsm_ses->pcm_id);
+    ALOGV("%s: config: channels=%d rate=%d, period_size=%d, period_cnt=%d, format=%d",
+          __func__, p_lsm_ses->common.config.channels, p_lsm_ses->common.config.rate,
+          p_lsm_ses->common.config.period_size, p_lsm_ses->common.config.period_count,
+          p_lsm_ses->common.config.format);
+
+    ATRACE_BEGIN("sthal:lsm: pcm_open");
+    p_lsm_ses->pcm = pcm_open(p_ses->stdev->snd_card, p_lsm_ses->pcm_id,
+                              PCM_IN, &p_lsm_ses->common.config);
+    ATRACE_END();
+
+    if (!p_lsm_ses->pcm) {
+        ALOGE("%s: ERROR. pcm_open failed", __func__);
+        status = -ENODEV;
+        goto error;
+    }
+    if (!pcm_is_ready(p_lsm_ses->pcm)) {
+        ALOGE("%s: ERROR. pcm_is_ready failed err=%s", __func__,
+              pcm_get_error(p_lsm_ses->pcm));
+        status = -ENODEV;
+        goto error;
+    }
+
+    if (st_hw_check_multi_stage_lsm_support()) {
+        status = lsm_set_session_data_v2(p_ses);
+        if (status)
+            goto error;
+    }
+    return 0;
+
+error:
+    platform_ape_free_pcm_device_id(p_ses->stdev->platform, p_lsm_ses->pcm_id);
+    if (p_lsm_ses->pcm) {
+        pcm_close(p_lsm_ses->pcm);
+        p_lsm_ses->pcm = NULL;
+    }
+    return status;
+}
+
+void ape_close_session(st_hw_session_t *p_ses)
+{
+    st_hw_session_lsm_t *p_lsm_ses = (st_hw_session_lsm_t*)p_ses;
+
+    ATRACE_BEGIN("sthal:lsm: pcm_close");
+    pcm_close(p_lsm_ses->pcm);
+    ATRACE_END();
+    p_lsm_ses->pcm = NULL;
+}
+
+int ape_get_module_version(st_hw_session_t *p_ses, void *param_info_payload,
+                           size_t param_size)
+{
+    struct st_module_param_info *mparams = NULL;
+    struct lsm_params_get_info *get_params;
+    st_hw_session_lsm_t *p_lsm_ses = (st_hw_session_lsm_t*)p_ses;
+    int status = 0;
+    size_t size = 0;
+
+    mparams = p_lsm_ses->lsm_usecase.params;
+    size = sizeof(struct lsm_params_get_info) + param_size;
+    get_params = calloc(1, size);
+    if (!get_params) {
+        ALOGE("%s: ERROR. Can not allocate memory for get params", __func__);
+        return -ENOMEM;
+    }
+
+    get_params->param_size =  param_size;
+    lsm_fill_get_param_info(LSM_GET_CUSTOM_PARAMS, get_params,
+                            &mparams[VERSION_ID],
+                            LSM_STAGE_INDEX_FIRST);
+    status = lsm_get_module_params(p_lsm_ses, get_params);
+    if (status) {
+        ALOGE("%s: ERROR. getting module version. status %d",
+             __func__, status);
+        goto done;
+    }
+    memcpy(param_info_payload, get_params->payload, param_size);
+done:
+    free(get_params);
+    return status;
+}
+#else
+static int ape_open_session(st_hw_session_t* p_ses __unused)
+{
+    return -ENOSYS;
+}
+
+static void ape_close_session(st_hw_session_t* p_ses __unused)
+{
+    return;
+}
+#endif
 
 static int route_reg_sm_ape(st_hw_session_t *p_ses,void *sm_data,
     unsigned int sm_size, uint32_t model_id)

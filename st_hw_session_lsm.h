@@ -153,6 +153,11 @@ struct lsm_param_custom_config {
     struct lsm_param_payload common;
 }__packed;
 
+struct version_arch_payload {
+    unsigned int version;
+    char arch[64];
+}__packed;
+
 struct st_hw_session_lsm {
     st_hw_session_t common;
     struct st_lsm_params lsm_usecase;
