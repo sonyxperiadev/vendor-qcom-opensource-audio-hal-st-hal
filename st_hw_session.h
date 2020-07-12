@@ -154,6 +154,10 @@ typedef int (*sound_trigger_enable_device_t)(st_hw_session_t *, bool);
 typedef int (*sound_trigger_get_param_data_t)(st_hw_session_t *, const char *,
     void *, size_t, size_t *);
 typedef int (*sound_trigger_send_detection_request_t)(st_hw_session_t *);
+typedef int (*sound_trigger_get_module_version)(st_hw_session_t *, void *, size_t);
+typedef int (*sound_trigger_open_session)(st_hw_session_t *);
+typedef void (*sound_trigger_close_session)(st_hw_session_t *);
+
 
 struct st_session_fptrs {
     sound_trigger_reg_sm_t reg_sm;
@@ -179,6 +183,9 @@ struct st_session_fptrs {
     sound_trigger_enable_device_t enable_device;
     sound_trigger_get_param_data_t get_param_data;
     sound_trigger_send_detection_request_t send_detection_request;
+    sound_trigger_get_module_version get_module_version;
+    sound_trigger_open_session open_session;
+    sound_trigger_close_session close_session;
 };
 
 #endif

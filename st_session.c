@@ -141,6 +141,7 @@ struct st_session_ev {
         char *chmix_coeff_str;
         bool enable;
         st_session_getparam_payload_t getparam;
+        char *module_version;
     } payload;
     st_session_t *stc_ses;
 };
@@ -4749,6 +4750,7 @@ static int idle_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
     st_session_t *stc_ses = ev->stc_ses;
     st_hw_session_t *hw_ses = st_ses->hw_ses_current;
     struct st_proxy_ses_sm_info_wrapper *p_info = NULL;
+    struct version_arch_payload version_payload;
 
     /* skip parameter check as this is an internal funciton */
     ALOGD("%s:[c%d-%d] handle event id %d", __func__, stc_ses->sm_handle,
@@ -4855,7 +4857,30 @@ static int idle_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
             __func__, st_ses->sm_handle);
         status = -EINVAL;
         break;
+    case ST_SES_EV_GET_MODULE_VERSION:
+        /* Open Dummy LSM session for google hotword during bootup */
 
+        status = hw_ses->fptrs->open_session(hw_ses);
+        if (status) {
+            ALOGE("%s: failed to start lsm session with error %d", __func__,
+                  status);
+            break;
+        }
+
+        status = hw_ses->fptrs->get_module_version(hw_ses, &version_payload,
+                                        sizeof(struct version_arch_payload));
+
+        if (status) {
+            ALOGE("%s: failed to get module version %d", __func__,
+                  status);
+            hw_ses->fptrs->close_session(hw_ses);
+            break;
+        }
+        hw_ses->fptrs->close_session(hw_ses);
+        snprintf(ev->payload.module_version, SOUND_TRIGGER_MAX_STRING_LEN, "%d, %s",
+                 version_payload.version, version_payload.arch);
+
+        break;
     default:
         ALOGD("%s:[%d] unhandled event", __func__, st_ses->sm_handle);
         break;
@@ -6783,6 +6808,23 @@ int st_session_request_detection(st_session_t *stc_ses)
     st_session_ev_t ev = {.ev_id = ST_SES_EV_REQUEST_DET, .stc_ses = stc_ses};
 
     /* lock to serialize event handling */
+    pthread_mutex_lock(&st_ses->lock);
+    DISPATCH_EVENT(st_ses, ev, status);
+    pthread_mutex_unlock(&st_ses->lock);
+    return status;
+}
+
+int st_session_get_module_version(st_session_t *stc_ses, char version[])
+{
+    int status = 0;
+
+    if (!stc_ses || !stc_ses->hw_proxy_ses)
+        return -EINVAL;
+
+    st_proxy_session_t *st_ses = stc_ses->hw_proxy_ses;
+    st_session_ev_t ev = { .ev_id = ST_SES_EV_GET_MODULE_VERSION, .stc_ses = stc_ses,
+                           .payload.module_version = version};
+
     pthread_mutex_lock(&st_ses->lock);
     DISPATCH_EVENT(st_ses, ev, status);
     pthread_mutex_unlock(&st_ses->lock);
