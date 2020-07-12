@@ -73,6 +73,7 @@ typedef enum st_session_event_id {
     ST_SES_EV_GET_PARAM_DATA,
     ST_SES_EV_DEFERRED_STOP,
     ST_SES_EV_REQUEST_DET,
+    ST_SES_EV_GET_MODULE_VERSION,
 } st_session_event_id_t;
 
 struct sound_trigger_device;
@@ -259,6 +260,7 @@ int st_session_get_param_data(st_session_t *st_ses, const char *param,
 int st_session_request_detection(st_session_t *st_ses);
 int st_session_update_recongition_config(st_session_t *st_ses);
 int st_session_get_preroll(st_session_t *st_ses);
+int st_session_get_module_version(st_session_t *st_ses, char *version);
 
 int process_detection_event_keyphrase_v2(
     st_proxy_session_t *st_ses, int detect_status,
