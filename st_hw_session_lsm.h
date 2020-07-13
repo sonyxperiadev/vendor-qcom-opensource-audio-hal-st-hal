@@ -155,7 +155,7 @@ struct lsm_param_custom_config {
 
 struct st_hw_session_lsm {
     st_hw_session_t common;
-    struct st_lsm_params* lsm_usecase;
+    struct st_lsm_params lsm_usecase;
     pthread_t callback_thread;
     bool exit_callback_thread;
 

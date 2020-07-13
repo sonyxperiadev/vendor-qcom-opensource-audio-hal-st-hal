@@ -5368,7 +5368,7 @@ static int get_shared_buf_fmt
     return ret;
 }
 
-bool platform_get_module_params_for_lsm_usecase
+static int platform_get_module_params_for_lsm_usecase
 (
     struct st_lsm_params *usecase,
     st_module_type_t sm_version
@@ -5384,18 +5384,18 @@ bool platform_get_module_params_for_lsm_usecase
             memcpy((uint8_t *)usecase->params, (uint8_t *)module_info->params,
                 sizeof(struct st_module_param_info) * MAX_PARAM_IDS);
             usecase->param_tag_tracker = module_info->param_tag_tracker;
-            return true;
+            return 0;
         }
     }
 
-    return false;
+    return -EINVAL;
 }
 
-void platform_get_lsm_usecase
+int platform_get_lsm_usecase
 (
    void* platform,
    struct st_vendor_info* v_info,
-   struct st_lsm_params** lsm_usecase,
+   struct st_lsm_params* lsm_usecase,
    st_exec_mode_t exec_mode,
    bool lpi_enable,
    st_module_type_t sm_version
@@ -5407,19 +5407,18 @@ void platform_get_lsm_usecase
     audio_devices_t capture_device =
         platform_stdev_get_capture_device(platform);
     sound_trigger_device_t *stdev = my_data->stdev;
-    bool set_module_params = false;
+    int status = 0;
 
     ALOGV("%s: Enter", __func__);
 
     if (!v_info || !lsm_usecase) {
         ALOGE("%s: received null params", __func__);
-        return;
+        return -EINVAL;
     }
 
     if (list_empty(&v_info->lsm_usecase_list)) {
-        *lsm_usecase = NULL;
         ALOGE("%s: lsm usecase not available", __func__);
-        return;
+        return -EINVAL;
     }
 
     list_for_each_safe(lsm_node, node, &v_info->lsm_usecase_list) {
@@ -5452,39 +5451,39 @@ void platform_get_lsm_usecase
                        stdev->barge_in_mode)) ||
                      (usecase->lpi_enable == ST_PLATFORM_LPI_DISABLE &&
                       !lpi_enable && !stdev->barge_in_mode))) {
-                    *lsm_usecase = usecase;
                     if (my_data->xml_version == PLATFORM_XML_VERSION_0x0106) {
-                        set_module_params =
-                            platform_get_module_params_for_lsm_usecase(usecase,
-                                sm_version);
-                        if (!set_module_params) {
+                        status = platform_get_module_params_for_lsm_usecase(usecase,
+                            sm_version);
+                        if (status) {
                             ALOGE("%s: Error. No matching module info params.",
                                 __func__);
-                            return;
+                            return status;
                         }
                     }
+                    memcpy((uint8_t *)lsm_usecase, (uint8_t *)usecase,
+                        sizeof(struct st_lsm_params));
                     v_info->in_channels = usecase->in_channels;
                     v_info->fluence_type = usecase->fluence_type;
                     v_info->profile_type = usecase->adm_cfg_profile;
                     v_info->shared_buf_fmt =
                         get_shared_buf_fmt(v_info->profile_type);
-                    if (sm_version == ST_MODULE_TYPE_PDK5) {
+                    if (sm_version == ST_MODULE_TYPE_PDK5)
                         v_info->app_type = usecase->pdk5_app_type;
-                    } else {
+                    else
                         v_info->app_type = usecase->app_type;
-                    }
-                    return;
+                    return status;
                 }
             } else {
-              /* Same lsm usecase will be used for multiple sessions */
-              *lsm_usecase = usecase;
-              v_info->in_channels = usecase->in_channels;
-              return;
+                /* Same lsm usecase will be used for multiple sessions */
+                memcpy((uint8_t *)lsm_usecase, (uint8_t *)usecase,
+                    sizeof(struct st_lsm_params));
+                v_info->in_channels = usecase->in_channels;
+                return status;
             }
         }
     }
     ALOGE("%s: No lsm usecase found for exec_mode %d", __func__, exec_mode);
-    *lsm_usecase = NULL;
+    return -EINVAL;
 }
 
 int platform_stdev_get_backend_channel_count
