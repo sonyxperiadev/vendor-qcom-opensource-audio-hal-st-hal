@@ -218,6 +218,27 @@ static void st_cpu_affinity_set(st_hw_session_pcm_t *p_pcm_ses)
 }
 #endif
 
+static void get_lib_path(char * lib_path, int path_size)
+{
+#ifdef LINUX_ENABLED
+#ifdef __LP64__
+    /* libs are stored in /usr/lib64 */
+    snprintf(lib_path, path_size, "%s", "/usr/lib64");
+#else
+    /* libs are stored in /usr/lib */
+    snprintf(lib_path, path_size, "%s", "/usr/lib");
+#endif
+#else
+#ifdef __LP64__
+    /* libs are stored in /vendor/lib64 */
+    snprintf(lib_path, path_size, "%s", "/vendor/lib64");
+#else
+    /* libs are stored in /vendor/lib */
+    snprintf(lib_path, path_size, "%s", "/vendor/lib");
+#endif
+#endif
+}
+
 static size_t get_ffv_read_buffer_len(st_hw_session_pcm_t *p_ses)
 {
     st_get_param_payload_t *params_buffer_ptr;
@@ -1244,7 +1265,9 @@ static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
     int num_tx_in_ch, num_out_ch, num_ec_ref_ch;
     int frame_len;
     int sample_rate;
-    const char *config_file_path = ST_FFV_CONFIG_FILE_PATH;
+    char vendor_config_path[MIXER_PATH_MAX_LENGTH];
+    char st_ffv_config_file[MIXER_PATH_MAX_LENGTH];
+    const char *config_file_path;
     FfvStatusType status_type;
     EspStatusType esp_status_type;
     int total_mem_size;
@@ -1273,6 +1296,12 @@ static int reg_sm(st_hw_session_t *p_ses, void *sm_data,
                                      p_pcm_ses->capture_config.rate,
                                      SOUND_TRIGGER_PCM_PERIOD_COUNT, 32);
 
+    platform_stdev_get_vendor_config_path(vendor_config_path,
+        sizeof(vendor_config_path));
+    /* Get path for st_ffv_config_file_name in vendor */
+    snprintf(st_ffv_config_file, sizeof(st_ffv_config_file),
+            "%s/%s", vendor_config_path, ST_FFV_CONFIG_FILE_NAME);
+    config_file_path = st_ffv_config_file;
     ALOGD("%s: opening pcm device=%d ", __func__, p_pcm_ses->pcm_id);
     ALOGV("%s: config: channels=%d rate=%d, period_size=%d, period_cnt=%d, format=%d",
           __func__, p_pcm_ses->capture_config.channels, p_pcm_ses->capture_config.rate,
@@ -2103,11 +2132,19 @@ void st_hw_sess_pcm_deinit(st_hw_session_t *const p_ses __unused)
 int st_hw_pcm_init()
 {
     int status = 0;
+    char lib_path[MIXER_PATH_MAX_LENGTH];
+    char ffv_lib_file[MIXER_PATH_MAX_LENGTH];
+    char esp_lib_file[MIXER_PATH_MAX_LENGTH];
 
+    /* Get path for libs */
+    get_lib_path(lib_path, sizeof(lib_path));
+
+    /* Get path for ffv_lib_file */
+    snprintf(ffv_lib_file, sizeof(ffv_lib_file), "%s/%s", lib_path, FFV_LIB_NAME);
     /* load FFV + SVA library */
-    pcm_data.ffv_lib_handle = dlopen(FFV_LIB, RTLD_NOW);
+    pcm_data.ffv_lib_handle = dlopen(ffv_lib_file, RTLD_NOW);
     if (!pcm_data.ffv_lib_handle) {
-        ALOGE("%s: Unable to open %s, error %s", __func__, FFV_LIB,
+        ALOGE("%s: Unable to open %s, error %s", __func__, ffv_lib_file,
             dlerror());
         status = -ENOENT;
         goto exit;
@@ -2139,10 +2176,13 @@ int st_hw_pcm_init()
     if (status)
         goto exit;
 
+    /* Get path for esp_lib_file */
+    snprintf(esp_lib_file, sizeof(esp_lib_file), "%s/%s", lib_path, ESP_LIB_NAME);
+
     /* load ESP library */
-    pcm_data.esp_lib_handle = dlopen(ESP_LIB, RTLD_NOW);
+    pcm_data.esp_lib_handle = dlopen(esp_lib_file, RTLD_NOW);
     if (!pcm_data.esp_lib_handle) {
-        ALOGE("%s: Unable to open %s, error %s", __func__, ESP_LIB,
+        ALOGE("%s: Unable to open %s, error %s", __func__, esp_lib_file,
             dlerror());
         status = -ENOENT;
         goto exit_1;

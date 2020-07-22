@@ -796,6 +796,7 @@ static void *buffer_thread_loop(void *context)
     bool real_time_check = true;
     uint64_t frame_receive_time = 0, frame_send_time = 0;
     uint64_t frame_read_time = 0, buffering_start_time = 0;
+    uint64_t ss_buf_time = 0;
     st_hw_sess_event_t hw_sess_event = {0};
 
     if (p_lsm_ses == NULL) {
@@ -895,6 +896,20 @@ static void *buffer_thread_loop(void *context)
                     st_sec_stage->ss_session->buff_sz =
                         (p_lsm_ses->common.kw_end_idx -
                         st_sec_stage->ss_session->buf_start);
+
+                    /*
+                     * As per requirement in PDK, input buffer size for
+                     * second stage should be in multiple of 10 ms.
+                     */
+                    ss_buf_time = convert_bytes_to_ms(st_sec_stage->ss_session->buff_sz,
+                        &p_lsm_ses->common.config);
+
+                    if (ss_buf_time % 10) {
+                        ss_buf_time -= (ss_buf_time % 10);
+                        st_sec_stage->ss_session->buff_sz = convert_ms_to_bytes(ss_buf_time,
+                            &p_lsm_ses->common.config);
+                    }
+
                     st_sec_stage->ss_session->lab_buf_sz =
                         p_lsm_ses->lab_drv_buf_size;
                     st_sec_stage->ss_session->det_status =

@@ -749,12 +749,14 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
     unsigned int num_sessions = 0;
     struct audio_device_info *item = NULL;
 
-    if (config != NULL) {
-        ALOGV("%s: Event type = %d", __func__, event_type);
-        list_for_each (node, &config->device_info.devices) {
-            item = node_to_item(node, struct audio_device_info, list);
-            ALOGV("%s: Audio device = 0x%x", __func__, item->type);
-        }
+    if (config == NULL) {
+        ALOGE("%s: Config is NULL, exiting", __func__);
+        return;
+    }
+
+    list_for_each (node, &config->device_info.devices) {
+        item = node_to_item(node, struct audio_device_info, list);
+        ALOGV("%s: Audio device = 0x%x", __func__, item->type);
     }
 
     /*
@@ -1732,8 +1734,8 @@ static int check_and_configure_second_stage_models
             sizeof(SML_HeaderTypeV3) + (i * sizeof(SML_BigSoundModelTypeV3)));
 
         if (big_sm->type != ST_SM_ID_SVA_GMM) {
-            if ((big_sm->type == ST_SM_ID_SVA_VOP) &&
-                !(recognition_mode & RECOGNITION_MODE_USER_IDENTIFICATION))
+            if (big_sm->type == SML_ID_SVA_S_STAGE_UBM || (big_sm->type == ST_SM_ID_SVA_VOP &&
+                !(recognition_mode & RECOGNITION_MODE_USER_IDENTIFICATION)))
                 continue;
 
             ss_usecase = platform_get_ss_usecase(st_ses->vendor_uuid_info, big_sm->type);
@@ -2506,8 +2508,14 @@ static int stdev_start_recognition
     else
         status = st_session_restart(st_session);
 
-    if (status)
+    if (status) {
+        /*
+         * still return success to sound trigger service, as session
+         * can be resumed internally due to SSR or PDR
+         */
+        status = 0;
         ALOGE("%s: failed to (re)start session", __func__);
+    }
 
     if (backend_cfg_change) {
         ALOGV("%s: backend config change, start existing sessions", __func__);

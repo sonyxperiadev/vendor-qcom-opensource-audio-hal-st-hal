@@ -416,7 +416,42 @@ struct platform_data {
 
     struct st_lpma_config lpma_cfg;
     struct listnode acdb_meta_key_list;
+
+    char vendor_config_path[MIXER_PATH_MAX_LENGTH];
+    char xml_file_path[MIXER_PATH_MAX_LENGTH];
 };
+
+
+/*
+ * Function to retrieve vendor configs path
+ *
+ * If 'ro.boot.product.vendor.sku' is not set,files would be loaded from
+ * /vendor/etc/. If the property is set, files would be loaded from
+ * /vendor/etc/audio/sku_{ro.boot.product.vendor.sku}.
+ * 'ro.boot.product.vendor.sku' would be set to SoC/SKU at boot up in vendor.
+*/
+static void platform_stdev_get_vendor_config_path(char* config_file_path, int path_size)
+{
+    char vendor_sku[PROPERTY_VALUE_MAX] = {'\0'};
+
+    if (property_get("ro.boot.product.vendor.sku", vendor_sku, "") <= 0) {
+#ifdef LINUX_ENABLED
+        /* Audio configs are stored in /etc */
+        snprintf(config_file_path, path_size, "%s", "/etc");
+#else
+        /* Audio configs are stored in /vendor/etc */
+        snprintf(config_file_path, path_size, "%s", "/vendor/etc");
+#endif
+    } else {
+        /* Audio configs are stored in /vendor/etc/audio/sku_${vendor_sku} */
+        snprintf(config_file_path, path_size,"%s%s", "/vendor/etc/audio/sku_", vendor_sku);
+    }
+}
+
+static void get_xml_file_path(char* path, const char* file_name, const char* vendor_path)
+{
+    snprintf(path, MIXER_PATH_MAX_LENGTH, "%s/%s", vendor_path, file_name);
+}
 
 static int load_soundmodel_lib(sound_trigger_device_t *stdev)
 {
@@ -2191,22 +2226,24 @@ static int platform_stdev_set_lsm_params
 
     /* Get the last added vendor_info node */
     sm_info_node = list_tail(&my_data->stdev->vendor_uuid_list);
-    if (sm_info_node) {
+    if (sm_info_node)
         sm_info = node_to_item(sm_info_node, struct st_vendor_info, list_node);
-    } else {
+
+    if (!sm_info) {
         ALOGE("%s: found NULL sm_info", __func__);
-        ret = -EINVAL;
-        goto err_exit;
+        free(kv_pairs);
+        return -EINVAL;
     }
 
     /* Get the last added lsm_params node */
     lsm_params_node = list_tail(&sm_info->lsm_usecase_list);
-    if (lsm_params_node) {
+    if (lsm_params_node)
         lsm_params = node_to_item(lsm_params_node, struct st_lsm_params, list_node);
-    } else {
+
+    if (!lsm_params) {
         ALOGE("%s: found NULL lsm_params", __func__);
-        ret = -EINVAL;
-        goto err_exit;
+        free(kv_pairs);
+        return -EINVAL;
     }
 
     err = str_parms_get_str(parms, ST_PARAM_KEY_EXECUTION_MODE,
@@ -2453,8 +2490,7 @@ err_exit:
         list_remove(module_node);
         free(module_params);
     }
-    if (lsm_params)
-        free(lsm_params);
+    free(lsm_params);
     free(kv_pairs);
     return ret;
 }
@@ -3219,20 +3255,23 @@ static int get_codec_version(struct platform_data *my_data,
     return 0;
 }
 
-static void query_stdev_platform(sound_trigger_device_t *stdev,
+static void query_stdev_platform(struct platform_data *my_data,
                                  const char *snd_card_name,
                                  char *mixer_path_xml)
 {
     if (strstr(snd_card_name, "msm8939-tapan")) {
-        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME_WCD9306,
-                        sizeof(MIXER_PATH_FILE_NAME_WCD9306));
+        get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME_WCD9306,
+            my_data->vendor_config_path);
+        strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
     } else if (strstr(snd_card_name, "msm8952-tomtom")||
                  strstr(snd_card_name, "msm8996-tomtom")) {
-        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME_WCD9330,
-                        sizeof(MIXER_PATH_FILE_NAME_WCD9330));
+        get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME_WCD9330,
+            my_data->vendor_config_path);
+        strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
     } else if (strstr(snd_card_name, "sdm670-skuw")) {
-        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME_SKUW,
-                        sizeof(MIXER_PATH_FILE_NAME_SKUW));
+        get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME_SKUW,
+            my_data->vendor_config_path);
+        strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
     } else if (strstr(snd_card_name, "msm8976-tasha")||
                  strstr(snd_card_name, "msm8952-tasha") ||
                  strstr(snd_card_name, "msm8953-tasha") ||
@@ -3241,22 +3280,27 @@ static void query_stdev_platform(sound_trigger_device_t *stdev,
                  strstr(snd_card_name, "sdm660-tasha") ||
                  strstr(snd_card_name, "sdm670-tasha") ||
                  strstr(snd_card_name, "apq8009-tashalite")) {
-        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME_WCD9335,
-                        sizeof(MIXER_PATH_FILE_NAME_WCD9335));
+        get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME_WCD9335,
+            my_data->vendor_config_path);
+        strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
     } else if (strstr(snd_card_name, "tavil")) {
-        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME_WCD9340,
-            sizeof(MIXER_PATH_FILE_NAME_WCD9340));
-        stdev->is_gcs = true;
+        get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME_WCD9340,
+            my_data->vendor_config_path);
+        strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
+        my_data->stdev->is_gcs = true;
     } else if (strstr(snd_card_name, "bg")) {
-        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME_BG,
-            sizeof(MIXER_PATH_FILE_NAME_BG));
-        stdev->is_gcs = true;
+        get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME_BG,
+            my_data->vendor_config_path);
+        strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
+        my_data->stdev->is_gcs = true;
     } else if (strstr(snd_card_name, "qcs405-tdm")) {
-        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME_TDM,
-            sizeof(MIXER_PATH_FILE_NAME_TDM));
+        get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME_TDM,
+            my_data->vendor_config_path);
+        strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
     } else {
-        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME,
-                         sizeof(MIXER_PATH_FILE_NAME));
+        get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME,
+            my_data->vendor_config_path);
+        strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
     }
     /* create mixer path file name from sound card name
     and attach cdp/qrd if sound card name has cdp/qrd */
@@ -3300,8 +3344,9 @@ static void query_stdev_platform(sound_trigger_device_t *stdev,
     }
     if (!strncmp(snd_card_name, "sm6150-wcd9375qrd-snd-card",
         sizeof("sm6150-wcd9375qrd-snd-card"))) {
-        strlcpy(mixer_path_xml, MIXER_PATH_FILE_NAME,
-                        sizeof(MIXER_PATH_FILE_NAME));
+        get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME,
+            my_data->vendor_config_path);
+        strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
     }
 
     strlcat(mixer_path_xml, MIXER_FILE_EXT, MIXER_PATH_MAX_LENGTH);
@@ -3335,7 +3380,7 @@ static void query_stdev_platform(sound_trigger_device_t *stdev,
         !strstr(snd_card_name, "sm6150-tavil") &&
         !strstr(snd_card_name, "apq8009-tasha") &&
         !strstr(snd_card_name, "msm8939-tomtom")) {
-        stdev->sw_mad = true;
+        my_data->stdev->sw_mad = true;
     }
 }
 
@@ -3964,8 +4009,12 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
     list_init(&stdev->adm_cfg_list);
     list_init(&my_data->acdb_meta_key_list);
 
+    platform_stdev_get_vendor_config_path(my_data->vendor_config_path,
+        sizeof(my_data->vendor_config_path));
     platform_stdev_set_default_config(my_data);
-    platform_parse_info(my_data, PLATFORM_PATH_XML);
+    get_xml_file_path(my_data->xml_file_path, PLATFORM_PATH_XML,
+        my_data->vendor_config_path);
+    platform_parse_info(my_data, my_data->xml_file_path);
 
     my_data->hwdep_fd = -1;
     my_data->vad_hwdep_fd = -1;
@@ -4018,7 +4067,7 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
 
     snd_card_name = mixer_get_name(stdev->mixer);
 
-    query_stdev_platform(stdev, snd_card_name, mixer_path_xml);
+    query_stdev_platform(my_data, snd_card_name, mixer_path_xml);
     stdev->audio_route = audio_route_init(snd_card_num, mixer_path_xml);
     if (!stdev->audio_route) {
         ALOGE("%s: ERROR. Failed to init audio route controls, aborting.",
