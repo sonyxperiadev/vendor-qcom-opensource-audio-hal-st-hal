@@ -2653,6 +2653,11 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
              * during only one remaining client model as there won't be a
              * merged model yet.
              */
+            if (!conf_levels) {
+                ALOGE("%s: ERROR. conf levels alloc failed", __func__);
+                status = -ENOMEM;
+                return status;
+            }
             memcpy(stc_ses->sm_info.cf_levels, conf_levels,
                    stc_ses->sm_info.cf_levels_size);
 
