@@ -2603,6 +2603,12 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
         if (v_info->merge_fs_soundmodels) {
             /* merge_fs_soundmodels is true only for QC SVA UUID */
 
+            if (conf_levels == NULL) {
+                ALOGE("%s: Unexpected, conf_levels pointer is NULL",
+                      __func__);
+                status = -EINVAL;
+                return status;
+            }
              /*
               * Note:
               * For ADSP case, the generated conf levles size must be equal to
@@ -2653,13 +2659,11 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
              * during only one remaining client model as there won't be a
              * merged model yet.
              */
-
-            /*
-             * User verification confidence is not required
-             * in SVA5 PDK_UV case. As first stage doesn't
-             * support user verification.
-             */
-            num_conf_levels = 1;
+            if (!conf_levels) {
+                ALOGE("%s: ERROR. conf levels alloc failed", __func__);
+                status = -ENOMEM;
+                return status;
+            }
             memcpy(stc_ses->sm_info.cf_levels, conf_levels,
                    stc_ses->sm_info.cf_levels_size);
 
@@ -2713,6 +2717,13 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
 
 
     } else {
+        if (conf_levels == NULL) {
+                ALOGE("%s: Unexpected, conf_levels pointer is NULL",
+                      __func__);
+                status = -EINVAL;
+                return status;
+        }
+
         if (!st_ses->lab_enabled && enable_lab)
             st_ses->lab_enabled = true;
 
@@ -2723,6 +2734,13 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
         sthw_cfg->client_req_preroll = stc_ses->preroll_duration;
         if (st_hw_ses->max_preroll < stc_ses->preroll_duration)
             st_hw_ses->max_preroll = stc_ses->preroll_duration;
+
+        /*
+         * User verification confidence is not required
+         * in SVA5 PDK_UV case. As first stage doesn't
+         * support user verification.
+         */
+        num_conf_levels = 1;
 
         /*
          * Cache it to use when client restarts without

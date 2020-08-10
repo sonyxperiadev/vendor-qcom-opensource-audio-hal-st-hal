@@ -682,11 +682,11 @@ struct st_ss_usecase platform_get_ss_usecase
     listen_model_indicator_enum sm_id
 );
 
-void platform_get_lsm_usecase
+int platform_get_lsm_usecase
 (
    void* platform,
    struct st_vendor_info* v_info,
-   struct st_lsm_params** lsm_usecase,
+   struct st_lsm_params* lsm_usecase,
    st_exec_mode_t exec_mode,
    bool lpi_enable,
    st_module_type_t sm_version
