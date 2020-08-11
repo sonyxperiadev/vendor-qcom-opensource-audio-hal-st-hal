@@ -157,6 +157,8 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_DEDICATED_HEADSET_PATH "dedicated_headset_path"
 #define ST_PARAM_KEY_ENABLE_DEBUG_DUMPS "enable_debug_dumps"
 #define ST_PARAM_KEY_DAM_TOKEN_ID "dam_token_id"
+#define ST_PARAM_KEY_GET_MODULE_VERSION "get_module_version"
+#define ST_PARAM_KEY_VERSION_ID "version_ids"
 
 #ifndef Q6AFE_HWDEP_NODE
 #define Q6AFE_HWDEP_NODE -1
@@ -2187,6 +2189,16 @@ static int platform_stdev_set_module_params
         module_params->param_tag_tracker |= PARAM_LAB_CONTROL_BIT;
     }
 
+    err = str_parms_get_str(parms, ST_PARAM_KEY_VERSION_ID,
+                            str_value, sizeof(str_value));
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_VERSION_ID);
+        ret = platform_stdev_set_module_param_ids(
+              &module_params->params[VERSION_ID], str_value, false);
+        if (ret)
+            goto err_exit;
+    }
+
     list_add_tail(&lsm_params->module_params_list,
         &module_params->list_node);
     free(kv_pairs);
@@ -2382,6 +2394,16 @@ static int platform_stdev_set_lsm_params
             if (ret)
                 goto err_exit;
             lsm_params->param_tag_tracker |= PARAM_LAB_CONTROL_BIT;
+        }
+
+        err = str_parms_get_str(parms, ST_PARAM_KEY_VERSION_ID,
+                                str_value, sizeof(str_value));
+        if (err >= 0) {
+            str_parms_del(parms, ST_PARAM_KEY_VERSION_ID);
+            ret = platform_stdev_set_module_param_ids(
+                &lsm_params->params[VERSION_ID], str_value, is_legacy_params);
+            if (ret)
+                goto err_exit;
         }
     } else {
         err = str_parms_get_str(parms, ST_PARAM_KEY_PDK5_APP_TYPE,
@@ -2824,6 +2846,14 @@ static int platform_stdev_set_sm_config_params
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_MERGE_FIRST_STAGE_SOUNDMODELS);
         sm_info->merge_fs_soundmodels =
+            !strncasecmp(str_value, "true", 4) ? true : false;
+    }
+
+    err = str_parms_get_str(parms, ST_PARAM_KEY_GET_MODULE_VERSION,
+                            str_value, sizeof(str_value));
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_GET_MODULE_VERSION);
+        sm_info->get_module_version =
             !strncasecmp(str_value, "true", 4) ? true : false;
     }
 
