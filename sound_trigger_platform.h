@@ -102,6 +102,7 @@ struct sound_trigger_device;
 #define PARAM_LAB_CONTROL_BIT (1 << 7)
 #define PARAM_REQUEST_DETECTION_BIT (1 << 8)
 #define PARAM_LAB_DAM_CFG_BIT (1 << 9)
+#define PARAM_GET_MODULE_VERSION (1 << 10)
 #define PARAM_ID_MANDATORY_BITS \
     (PARAM_LOAD_SOUND_MODEL_BIT | PARAM_UNLOAD_SOUND_MODEL_BIT)
 
@@ -213,6 +214,7 @@ enum st_param_id_type {
     LAB_CONTROL,
     REQUEST_DETECTION,
     LAB_DAM_CFG,
+    VERSION_ID,
     MAX_PARAM_IDS
 };
 
@@ -346,6 +348,7 @@ struct st_vendor_info {
     int app_type;
     bool is_qcva_uuid;
     bool is_qcmd_uuid;
+    bool get_module_version;
     bool merge_fs_soundmodels;
     unsigned int fwk_mode;
     int sample_rate;
@@ -682,11 +685,11 @@ struct st_ss_usecase platform_get_ss_usecase
     listen_model_indicator_enum sm_id
 );
 
-void platform_get_lsm_usecase
+int platform_get_lsm_usecase
 (
    void* platform,
    struct st_vendor_info* v_info,
-   struct st_lsm_params** lsm_usecase,
+   struct st_lsm_params* lsm_usecase,
    st_exec_mode_t exec_mode,
    bool lpi_enable,
    st_module_type_t sm_version
