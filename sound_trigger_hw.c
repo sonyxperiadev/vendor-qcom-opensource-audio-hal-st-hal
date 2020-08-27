@@ -1252,6 +1252,7 @@ static void handle_echo_ref_switch(audio_event_type_t event_type,
              stdev->session_allowed) {
             /* pause and resume ADSP sessions to send new echo reference */
             list_for_each(node, &stdev->sound_model_list) {
+                ALOGD("%s: Pause and resume sessions", __func__);
                 p_ses = node_to_item(node, st_session_t, list_node);
                 if (p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
                     st_session_pause(p_ses);
@@ -2331,6 +2332,10 @@ static int stdev_unload_sound_model(const struct sound_trigger_hw_device *dev,
         ret = -EINVAL;
         goto exit;
     }
+
+    ALOGD("%s:[%d] fs detections: %d, ss detections: %d, ss rejections: %d",
+        __func__, handle, st_session->fs_det_count, st_session->ss_det_count,
+        st_session->ss_rej_count);
 
     if (st_session->callback) {
         status = stop_recognition_l(st_session);

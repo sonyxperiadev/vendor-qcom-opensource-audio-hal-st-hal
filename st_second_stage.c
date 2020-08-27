@@ -311,8 +311,10 @@ static int process_frame_user_verification(st_arm_ss_session_t *ss_session,
 
     ALOGV("%s: Issuing capi_get_param for param %d", __func__,
         VOICEPRINT2_ID_RESULT);
+    ATRACE_BEGIN("sthal:second_stage: get_result for user verification (VOP)");
     rc = ss_session->capi_handle->vtbl_ptr->get_param(ss_session->capi_handle,
         VOICEPRINT2_ID_RESULT, NULL, &capi_result_ptr);
+    ATRACE_END();
     if (CAPI_V2_EOK != rc) {
         ALOGE("%s: get_param failed, result = %d", __func__, rc);
         ret = -EINVAL;
@@ -344,8 +346,6 @@ static int start_user_verification(st_arm_second_stage_t *st_sec_stage)
     uint32_t bytes_processed_ms = 0;
 
     ALOGV("%s: Enter", __func__);
-
-    start_time = get_current_time_ns();
 
     process_input_buff = calloc(1, ss_session->buff_sz);
     if (!process_input_buff) {
@@ -412,6 +412,9 @@ static int start_user_verification(st_arm_second_stage_t *st_sec_stage)
             ret = pthread_cond_timedwait(&ss_session->cond, &ss_session->lock,
                 &tspec);
             ALOGV("%s: done waiting on cond", __func__);
+
+            start_time = get_current_time_ns();
+
             if (ret) {
                 ALOGE("%s: ERROR. read wait timed out, ret %d", __func__, ret);
                 break;
@@ -550,7 +553,10 @@ static void *buffer_thread_loop(void *st_second_stage)
             if (st_sec_stage->stdev->enable_debug_dumps) {
                 ST_DBG_FILE_OPEN_WR(st_sec_stage->dump_fp,
                     ST_DEBUG_DUMP_LOCATION, "ss_buf_kw_det", "bin",
-                    ss_fd_cnt_kw_det++);
+                    ss_fd_cnt_kw_det);
+                ALOGD("%s: 2nd stage KWD buffer stored in: ss_buf_kw_det_%d.bin",
+                    __func__, ss_fd_cnt_kw_det);
+                ss_fd_cnt_kw_det++;
             }
             start_keyword_detection(st_sec_stage);
             if (st_sec_stage->stdev->enable_debug_dumps)
@@ -559,7 +565,10 @@ static void *buffer_thread_loop(void *st_second_stage)
             if (st_sec_stage->stdev->enable_debug_dumps) {
                 ST_DBG_FILE_OPEN_WR(st_sec_stage->dump_fp,
                     ST_DEBUG_DUMP_LOCATION, "ss_buf_user_ver", "bin",
-                    ss_fd_cnt_user_ver++);
+                    ss_fd_cnt_user_ver);
+                ALOGD("%s: 2nd stage UV buffer stored in: ss_buf_user_ver_%d.bin",
+                    __func__, ss_fd_cnt_user_ver);
+                ss_fd_cnt_user_ver++;
             }
             start_user_verification(st_sec_stage);
             if (st_sec_stage->stdev->enable_debug_dumps)
