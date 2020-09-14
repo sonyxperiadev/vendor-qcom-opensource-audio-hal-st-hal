@@ -1519,8 +1519,8 @@ static void update_available_phrase_info
 
 static bool compare_recognition_config
 (
-   const struct sound_trigger_recognition_config *current_config,
-   struct sound_trigger_recognition_config *new_config
+   const struct sound_trigger_recognition_config *new_config,
+   struct sound_trigger_recognition_config *current_config
 )
 {
     unsigned int i = 0, j = 0;
@@ -1542,7 +1542,6 @@ static bool compare_recognition_config
         (current_config->capture_requested != new_config->capture_requested) ||
         (current_config->num_phrases != new_config->num_phrases) ||
         (current_config->data_size != new_config->data_size) ||
-        (current_config->data_offset != new_config->data_offset) ||
         (hw_properties_extended.header.version == SOUND_TRIGGER_DEVICE_API_VERSION_1_3 &&
          memcmp((char *) current_config + current_config->data_offset,
                (char *) new_config + sizeof(struct sound_trigger_recognition_config) +
