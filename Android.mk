@@ -105,9 +105,6 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_VENDOR_MODULE := true
 LOCAL_MULTILIB := $(AUDIOSERVER_MULTILIB)
 
-LOCAL_COPY_HEADERS_TO   := mm-audio/sound_trigger
-LOCAL_COPY_HEADERS      := sound_trigger_prop_intf.h
-
 include $(BUILD_SHARED_LIBRARY)
 
 #
