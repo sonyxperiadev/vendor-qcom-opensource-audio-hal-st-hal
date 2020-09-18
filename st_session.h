@@ -161,6 +161,10 @@ struct st_session {
     struct sound_model_info sm_info;
 
     st_module_type_t f_stage_version;
+
+    uint32_t fs_det_count;
+    uint32_t ss_det_count;
+    uint32_t ss_rej_count;
 };
 
 struct st_proxy_session {
