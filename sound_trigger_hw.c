@@ -793,6 +793,21 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
 
     if (!num_sessions) {
         stdev->session_allowed = conc_allowed;
+        /*
+         * This is needed for the following usecase:
+         *
+         * 1. LPI and NLPI have different number of MICs (different devices).
+         * 2. ST session is stopped from app and unloaded while Tx active.
+         * 3. Tx stops.
+         * 4. ST session started again from app on LPI.
+         *
+         * The device disablement is missed in step 3 because the st_session was
+         * deinitialized. Thus, it is handled here.
+         */
+        if (event_type == AUDIO_EVENT_CAPTURE_DEVICE_INACTIVE &&
+            !platform_stdev_is_dedicated_sva_path(stdev->platform) &&
+            platform_stdev_backend_reset_allowed(stdev->platform))
+            platform_stdev_disable_stale_devices(stdev->platform);
         pthread_mutex_unlock(&stdev->lock);
         return;
     }
@@ -849,12 +864,26 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
             }
         } else {
             if (event_type == AUDIO_EVENT_CAPTURE_DEVICE_INACTIVE) {
+                /*
+                 * The reset_backend flag allows the backend device to be disabled. This should
+                 * only be disallowed when in non-dedicated path mode and there is an active
+                 * audio input stream.
+                 */
+                stdev->reset_backend = platform_stdev_backend_reset_allowed(stdev->platform);
+                st_hw_check_and_update_lpi(stdev, p_ses);
+                stdev->vad_enable = st_hw_check_vad_support(stdev, p_ses, stdev->lpi_enable);
+
                 list_for_each(p_ses_node, &stdev->sound_model_list) {
                     p_ses = node_to_item(p_ses_node, st_session_t, list_node);
                     ALOGD("%s:[%d] Capture device is disabled, pause SVA session",
                           __func__, p_ses->sm_handle);
                     st_session_pause(p_ses);
                 }
+                /*
+                 * This is needed when the session goes to loaded state, then
+                 * LPI/NLPI switch happens due to Rx event.
+                 */
+                platform_stdev_disable_stale_devices(stdev->platform);
                 list_for_each(p_ses_node, &stdev->sound_model_list) {
                     p_ses = node_to_item(p_ses_node, st_session_t, list_node);
                     ALOGD("%s:[%d] Capture device is disabled, resume SVA session",
@@ -922,6 +951,15 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
             }
         }
     }
+    /*
+     * The device can be disabled within this thread upon reception of the device
+     * active event because audio hal does not enable the device until after returning
+     * from this callback. After this thread exits, device disablement will be
+     * disallowed until the device inactive event is received.
+     */
+    if (event_type == AUDIO_EVENT_CAPTURE_DEVICE_ACTIVE &&
+        !platform_stdev_is_dedicated_sva_path(stdev->platform))
+        stdev->reset_backend = platform_stdev_backend_reset_allowed(stdev->platform);
     pthread_mutex_unlock(&stdev->lock);
     ALOGV("%s: Exit", __func__);
 }
