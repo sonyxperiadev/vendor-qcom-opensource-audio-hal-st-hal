@@ -4097,12 +4097,16 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
 
     snd_card_name = mixer_get_name(stdev->mixer);
 
-    query_stdev_platform(my_data, snd_card_name, mixer_path_xml);
-    stdev->audio_route = audio_route_init(snd_card_num, mixer_path_xml);
-    if (!stdev->audio_route) {
-        ALOGE("%s: ERROR. Failed to init audio route controls, aborting.",
-                __func__);
-        goto cleanup;
+    stdev->shared_mixer =
+        property_get_bool("persist.vendor.audio.shared_mixer.enabled", false);
+    if (!stdev->shared_mixer) {
+        query_stdev_platform(my_data, snd_card_name, mixer_path_xml);
+        stdev->audio_route = audio_route_init(snd_card_num, mixer_path_xml);
+        if (!stdev->audio_route) {
+            ALOGE("%s: ERROR. Failed to init audio route controls, aborting.",
+                    __func__);
+            goto cleanup;
+        }
     }
     stdev->snd_card = snd_card_num;
 
@@ -5957,11 +5961,12 @@ void platform_stdev_send_ec_ref_cfg
     struct platform_data *my_data = (struct platform_data *)platform;
     sound_trigger_device_t *stdev = my_data->stdev;
     struct sound_trigger_event_info event_info = {{0}, 0};
+    bool force_reset_ec = stdev->shared_mixer;
 
     if (is_ec_profile(profile_type)) {
         event_info.st_ec_ref_enabled = enable;
         // reset the pending active EC mixer ctls first
-        if (!stdev->audio_ec_enabled) {
+        if (!stdev->audio_ec_enabled && !force_reset_ec) {
             while (stdev->ec_reset_pending_cnt > 0) {
                 audio_route_reset_and_update_path(stdev->audio_route,
                         my_data->ec_ref_mixer_path);
@@ -5982,7 +5987,7 @@ void platform_stdev_send_ec_ref_cfg
         } else {
             stdev->audio_hal_cb(ST_EVENT_UPDATE_ECHO_REF, &event_info);
             /* avoid disabling echo if audio hal has enabled echo ref */
-            if (!stdev->audio_ec_enabled) {
+            if (!stdev->audio_ec_enabled || force_reset_ec) {
                 ALOGD("%s: reset echo ref %s", __func__,
                     my_data->ec_ref_mixer_path);
                 audio_route_reset_and_update_path(stdev->audio_route,
