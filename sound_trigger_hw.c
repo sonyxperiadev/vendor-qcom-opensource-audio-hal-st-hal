@@ -2777,7 +2777,7 @@ stdev_get_properties_extended(const struct sound_trigger_hw_device *dev)
                 goto exit_2;
             }
 
-            st_session->f_stage_version = ST_MODULE_TYPE_CUSTOM;
+            st_session->f_stage_version = ST_MODULE_TYPE_GMM;
             st_session->vendor_uuid_info = v_info;
             handle = android_atomic_inc(&stdev->session_id);
 
