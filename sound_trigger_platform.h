@@ -652,6 +652,11 @@ void platform_stdev_check_and_append_usecase
    char *use_case
 );
 
+void platform_stdev_disable_stale_devices
+(
+    void *platform
+);
+
 void platform_stdev_check_and_update_ec_ref_config
 (
    void *platform,
@@ -709,6 +714,11 @@ bool platform_stdev_is_hwmad_backend
 bool platform_stdev_is_dedicated_sva_path
 (
    void *platform
+);
+
+bool platform_stdev_backend_reset_allowed
+(
+    void *platform
 );
 
 int platform_stdev_derive_mixer_ctl_from_backend

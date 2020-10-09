@@ -261,6 +261,7 @@ struct sound_trigger_device {
     bool screen_off;
     bool barge_in_mode;
     int ec_reset_pending_cnt;
+    bool shared_mixer;
 };
 
 typedef struct sound_trigger_device sound_trigger_device_t;

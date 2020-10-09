@@ -184,7 +184,7 @@ void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
             lock_status = pthread_mutex_trylock(&st_ses->lock);
         } while (lock_status && !st_ses->device_disabled &&
                  (st_ses->exec_mode != ST_EXEC_MODE_NONE) &&
-                 (st_ses->current_state != ssr_state_fn));
+                 (st_ses->current_state == active_state_fn));
 
         if (st_ses->device_disabled) {
             ALOGV("%s:[%d] device switch in progress, ignore event",
@@ -192,8 +192,8 @@ void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
         } else if (st_ses->exec_mode == ST_EXEC_MODE_NONE) {
             ALOGV("%s:[%d] transition in progress, ignore event",
                   __func__, st_ses->sm_handle);
-        } else if (st_ses->current_state == ssr_state_fn) {
-            ALOGV("%s:[%d] SSR handling in progress, ignore event",
+        } else if (st_ses->current_state != active_state_fn) {
+            ALOGV("%s:[%d] Session not in active state, ignore event",
                   __func__, st_ses->sm_handle);
         } else if (!lock_status) {
             /*
@@ -5537,10 +5537,13 @@ static int active_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         break;
 
     case ST_SES_EV_SET_DEVICE:
-        if (!ev->payload.enable)
+        if (!ev->payload.enable) {
+            st_ses->device_disabled = true;
             status = hw_ses->fptrs->disable_device(hw_ses, true);
-        else
+        } else {
             status = hw_ses->fptrs->enable_device(hw_ses, true);
+            st_ses->device_disabled = false;
+        }
 
         if (status && st_ses->stdev->ssr_offline_received) {
             STATE_TRANSITION(st_ses, ssr_state_fn);

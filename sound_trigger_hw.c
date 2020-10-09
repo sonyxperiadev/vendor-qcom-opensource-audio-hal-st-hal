@@ -793,6 +793,21 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
 
     if (!num_sessions) {
         stdev->session_allowed = conc_allowed;
+        /*
+         * This is needed for the following usecase:
+         *
+         * 1. LPI and NLPI have different number of MICs (different devices).
+         * 2. ST session is stopped from app and unloaded while Tx active.
+         * 3. Tx stops.
+         * 4. ST session started again from app on LPI.
+         *
+         * The device disablement is missed in step 3 because the st_session was
+         * deinitialized. Thus, it is handled here.
+         */
+        if (event_type == AUDIO_EVENT_CAPTURE_DEVICE_INACTIVE &&
+            !platform_stdev_is_dedicated_sva_path(stdev->platform) &&
+            platform_stdev_backend_reset_allowed(stdev->platform))
+            platform_stdev_disable_stale_devices(stdev->platform);
         pthread_mutex_unlock(&stdev->lock);
         return;
     }
@@ -849,12 +864,26 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
             }
         } else {
             if (event_type == AUDIO_EVENT_CAPTURE_DEVICE_INACTIVE) {
+                /*
+                 * The reset_backend flag allows the backend device to be disabled. This should
+                 * only be disallowed when in non-dedicated path mode and there is an active
+                 * audio input stream.
+                 */
+                stdev->reset_backend = platform_stdev_backend_reset_allowed(stdev->platform);
+                st_hw_check_and_update_lpi(stdev, p_ses);
+                stdev->vad_enable = st_hw_check_vad_support(stdev, p_ses, stdev->lpi_enable);
+
                 list_for_each(p_ses_node, &stdev->sound_model_list) {
                     p_ses = node_to_item(p_ses_node, st_session_t, list_node);
                     ALOGD("%s:[%d] Capture device is disabled, pause SVA session",
                           __func__, p_ses->sm_handle);
                     st_session_pause(p_ses);
                 }
+                /*
+                 * This is needed when the session goes to loaded state, then
+                 * LPI/NLPI switch happens due to Rx event.
+                 */
+                platform_stdev_disable_stale_devices(stdev->platform);
                 list_for_each(p_ses_node, &stdev->sound_model_list) {
                     p_ses = node_to_item(p_ses_node, st_session_t, list_node);
                     ALOGD("%s:[%d] Capture device is disabled, resume SVA session",
@@ -922,6 +951,15 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
             }
         }
     }
+    /*
+     * The device can be disabled within this thread upon reception of the device
+     * active event because audio hal does not enable the device until after returning
+     * from this callback. After this thread exits, device disablement will be
+     * disallowed until the device inactive event is received.
+     */
+    if (event_type == AUDIO_EVENT_CAPTURE_DEVICE_ACTIVE &&
+        !platform_stdev_is_dedicated_sva_path(stdev->platform))
+        stdev->reset_backend = platform_stdev_backend_reset_allowed(stdev->platform);
     pthread_mutex_unlock(&stdev->lock);
     ALOGV("%s: Exit", __func__);
 }
@@ -1264,16 +1302,9 @@ static void handle_echo_ref_switch(audio_event_type_t event_type,
     pthread_mutex_unlock(&stdev->lock);
 }
 
-static int stdev_get_properties(const struct sound_trigger_hw_device *dev,
-    struct sound_trigger_properties *properties)
+static void get_base_properties(struct sound_trigger_device *stdev)
 {
-    struct sound_trigger_device *stdev = (struct sound_trigger_device *)dev;
-
-    ALOGI("%s", __func__);
-    if (properties == NULL) {
-        ALOGE("%s: NULL properties", __func__);
-        return -EINVAL;
-    }
+    ALOGI("%s: enter", __func__);
 
     stdev->hw_properties->concurrent_capture = stdev->conc_capture_supported;
 
@@ -1301,8 +1332,24 @@ static int stdev_get_properties(const struct sound_trigger_hw_device *dev,
            stdev->hw_properties->capture_transition,
            stdev->hw_properties->concurrent_capture);
 
-    memcpy(properties, stdev->hw_properties,
+    memset(&hw_properties_extended, 0, sizeof(hw_properties_extended));
+    memcpy(&hw_properties_extended.base, stdev->hw_properties,
            sizeof(struct sound_trigger_properties));
+}
+
+static int stdev_get_properties(const struct sound_trigger_hw_device *dev,
+    struct sound_trigger_properties *properties)
+{
+    struct sound_trigger_device *stdev = (struct sound_trigger_device *)dev;
+
+    ALOGI("%s", __func__);
+    if (properties == NULL) {
+        ALOGE("%s: NULL properties", __func__);
+        return -EINVAL;
+    }
+
+    get_base_properties(stdev);
+    properties = (struct sound_trigger_properties *)&hw_properties_extended.base;
     hw_properties_extended.header.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_0;
     return 0;
 }
@@ -1510,8 +1557,8 @@ static void update_available_phrase_info
 
 static bool compare_recognition_config
 (
-   const struct sound_trigger_recognition_config *current_config,
-   struct sound_trigger_recognition_config *new_config
+   const struct sound_trigger_recognition_config *new_config,
+   struct sound_trigger_recognition_config *current_config
 )
 {
     unsigned int i = 0, j = 0;
@@ -1533,7 +1580,6 @@ static bool compare_recognition_config
         (current_config->capture_requested != new_config->capture_requested) ||
         (current_config->num_phrases != new_config->num_phrases) ||
         (current_config->data_size != new_config->data_size) ||
-        (current_config->data_offset != new_config->data_offset) ||
         (hw_properties_extended.header.version == SOUND_TRIGGER_DEVICE_API_VERSION_1_3 &&
          memcmp((char *) current_config + current_config->data_offset,
                (char *) new_config + sizeof(struct sound_trigger_recognition_config) +
@@ -2739,11 +2785,8 @@ stdev_get_properties_extended(const struct sound_trigger_hw_device *dev)
 
     stdev = (struct sound_trigger_device *)dev;
     prop_hdr = (struct sound_trigger_properties_header *)&hw_properties_extended;
-    status = stdev_get_properties(dev, &hw_properties_extended.base);
-    if (status) {
-        ALOGW("%s: Failed to initialize the stdev properties", __func__);
-        return NULL;
-    }
+    get_base_properties(stdev);
+
     hw_properties_extended.header.size = sizeof(struct sound_trigger_properties_extended_1_3);
     hw_properties_extended.audio_capabilities = 0;
     hw_properties_extended.header.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_3;
@@ -2772,7 +2815,7 @@ stdev_get_properties_extended(const struct sound_trigger_hw_device *dev)
                 goto exit_2;
             }
 
-            st_session->f_stage_version = ST_MODULE_TYPE_CUSTOM;
+            st_session->f_stage_version = ST_MODULE_TYPE_GMM;
             st_session->vendor_uuid_info = v_info;
             handle = android_atomic_inc(&stdev->session_id);
 
@@ -2952,6 +2995,11 @@ static int stdev_open(const hw_module_t* module, const char* name,
     *device = &stdev->device.common;
     stdev_ref_cnt++;
     pthread_mutex_unlock(&stdev_init_lock);
+
+    get_base_properties(stdev);
+    hw_properties_extended.header.size = sizeof(struct sound_trigger_properties_extended_1_3);
+    hw_properties_extended.audio_capabilities = 0;
+    hw_properties_extended.header.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_3;
 
     ATRACE_END();
     return 0;
@@ -3288,6 +3336,15 @@ int sound_trigger_hw_call_back(audio_event_type_t event,
             break;
         }
         handle_screen_status_change(config);
+        break;
+
+    case AUDIO_EVENT_ROUTE_INIT_DONE:
+        if (!config) {
+            ALOGE("%s: NULL config for AUDIO_EVENT_ROUTE_INIT_DONE", __func__);
+            ret = -EINVAL;
+            break;
+        }
+        stdev->audio_route = config->u.audio_route;
         break;
 
     default:
