@@ -59,6 +59,7 @@ typedef unsigned char __u8;
 #include <cutils/str_parms.h>
 #include <cutils/properties.h>
 #include <cutils/trace.h>
+#include <cutils/bitops.h>
 #include <dlfcn.h>
 #include <expat.h>
 #include <errno.h>
