@@ -1349,7 +1349,7 @@ static int stdev_get_properties(const struct sound_trigger_hw_device *dev,
     }
 
     get_base_properties(stdev);
-    memcpy(properties, &hw_properties_extended.base, sizeof(struct sound_trigger_properties));
+    properties = (struct sound_trigger_properties *)&hw_properties_extended.base;
     hw_properties_extended.header.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_0;
     return 0;
 }
