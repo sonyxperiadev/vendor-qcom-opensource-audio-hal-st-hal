@@ -2542,8 +2542,7 @@ static int platform_stdev_create_lsm_params
         return -ENOMEM;
     }
 
-    if (my_data->xml_version > PLATFORM_XML_VERSION_0x0105)
-        list_init(&lsm_params->module_params_list);
+    list_init(&lsm_params->module_params_list);
 
     list_add_tail(&sm_info->lsm_usecase_list, &lsm_params->list_node);
 
