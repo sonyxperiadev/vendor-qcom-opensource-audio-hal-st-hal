@@ -1107,6 +1107,7 @@ static void switch_device()
         st_session_disable_device(p_ses);
     }
     sthw_extn_lpma_notify_event(LPMA_EVENT_DISABLE_DEVICE);
+    platform_stdev_disable_stale_devices(stdev->platform);
 
     list_for_each(p_ses_node, &stdev->sound_model_list) {
         p_ses = node_to_item(p_ses_node, st_session_t, list_node);
