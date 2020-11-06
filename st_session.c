@@ -236,20 +236,23 @@ void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
                  (st_ses->current_state == buffering_state_fn) &&
                  !st_ses->stdev->ssr_offline_received);
 
-        if (st_ses->det_stc_ses->pending_stop)
+        if (st_ses->det_stc_ses->pending_stop) {
             ALOGV("%s:[%d] pending stop already queued, ignore event",
                 __func__, st_ses->sm_handle);
-        else if (!st_ses->det_stc_ses->detection_sent)
-            ALOGV("%s:[%d] client callback hasn't been called, ignore event",
-                __func__, st_ses->sm_handle);
-        else if (st_ses->current_state != buffering_state_fn)
+        } else if (!st_ses->det_stc_ses->detection_sent) {
+                ev.ev_id = ST_SES_EV_RESTART;
+                DISPATCH_EVENT(st_ses, ev, status);
+                ALOGV("%s:[%d] client callback hasn't been called, restart detection evt_id(%d)",
+                   __func__, st_ses->sm_handle, ev.ev_id);
+        } else if (st_ses->current_state != buffering_state_fn) {
             ALOGV("%s:[%d] session already stopped buffering, ignore event",
                 __func__, st_ses->sm_handle);
-        else if (st_ses->stdev->ssr_offline_received)
+        } else if (st_ses->stdev->ssr_offline_received) {
             ALOGV("%s:[%d] SSR handling in progress, ignore event",
                   __func__, st_ses->sm_handle);
-        else if (!lock_status)
+        } else if (!lock_status) {
             DISPATCH_EVENT(st_ses, ev, status);
+        }
 
         if (!lock_status)
             pthread_mutex_unlock(&st_ses->lock);
