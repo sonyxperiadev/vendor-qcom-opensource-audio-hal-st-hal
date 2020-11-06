@@ -3002,6 +3002,7 @@ static int stdev_open(const hw_module_t* module, const char* name,
     hw_properties_extended.header.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_3;
 
     ATRACE_END();
+    ALOGD("%s: Exit ", __func__);
     return 0;
 
 exit_1:

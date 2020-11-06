@@ -59,6 +59,7 @@ typedef unsigned char __u8;
 #include <cutils/str_parms.h>
 #include <cutils/properties.h>
 #include <cutils/trace.h>
+#include <cutils/bitops.h>
 #include <dlfcn.h>
 #include <expat.h>
 #include <errno.h>
@@ -2541,8 +2542,7 @@ static int platform_stdev_create_lsm_params
         return -ENOMEM;
     }
 
-    if (my_data->xml_version > PLATFORM_XML_VERSION_0x0105)
-        list_init(&lsm_params->module_params_list);
+    list_init(&lsm_params->module_params_list);
 
     list_add_tail(&sm_info->lsm_usecase_list, &lsm_params->list_node);
 
@@ -5064,9 +5064,27 @@ bool platform_stdev_check_and_update_concurrency
             default:
                 break;
         }
-        if (stdev->conc_capture_supported)
-            concurrency_ses_allowed = stdev->session_allowed;
-        else if (stdev->tx_concurrency_active > 0)
+
+        /*
+         * This disablement of VOIP/Voice flags is needed for the following usecase:
+         *
+         * 1. VOIP/Voice and AR active.
+         * 2. VOIP/Voice stops - AHAL sends stream inactive events for each stream,
+         *    followed by the shared device inactive and device active events which
+         *    both have VOIP/voice usecase, followed by one stream active event for AR.
+         * 3. AR stops - stream and device inactive events with pcm capture usecase.
+         *
+         * In this usecase the VOIP/voice flags get stuck set to true, so reset them here.
+         */
+        if (stdev->tx_concurrency_active == 0) {
+            stdev->conc_voice_active = false;
+            stdev->conc_voip_active = false;
+        }
+        if ((!stdev->conc_capture_supported &&
+             stdev->tx_concurrency_active > 0) ||
+            (stdev->conc_capture_supported &&
+             ((!stdev->conc_voice_call_supported && stdev->conc_voice_active) ||
+              (!stdev->conc_voip_call_supported && stdev->conc_voip_active))))
             concurrency_ses_allowed = false;
     } else {
         /* handle CAPTURE_STREAM events */
@@ -5090,30 +5108,8 @@ bool platform_stdev_check_and_update_concurrency
                 num_sessions > stdev->rx_conc_max_st_ses)
                 concurrency_ses_allowed = false;
         }
-        if (concurrency_ses_allowed) {
-            if ((!stdev->conc_capture_supported &&
-                 stdev->tx_concurrency_active > 0) ||
-                (stdev->conc_capture_supported &&
-                 ((!stdev->conc_voice_call_supported && stdev->conc_voice_active) ||
-                  (!stdev->conc_voip_call_supported && stdev->conc_voip_active))))
-                concurrency_ses_allowed = false;
-        }
-    }
-
-    /*
-     * This disablement of VOIP/Voice flags is needed for the following usecase:
-     *
-     * 1. VOIP/Voice and AR active.
-     * 2. VOIP/Voice stops - AHAL sends stream inactive events for each stream,
-     *    followed by the shared device inactive and device active events which
-     *    both have VOIP/voice usecase, followed by one stream active event for AR.
-     * 3. AR stops - stream and device inactive events with pcm capture usecase.
-     *
-     * In this usecase the VOIP/voice flags get stuck set to true, so reset them here.
-     */
-    if (stdev->tx_concurrency_active == 0) {
-        stdev->conc_voice_active = false;
-        stdev->conc_voip_active = false;
+        if (concurrency_ses_allowed)
+            concurrency_ses_allowed = stdev->session_allowed;
     }
 
     ALOGD("%s: dedicated path %d, reset backend %d, tx %d, rx %d,"
