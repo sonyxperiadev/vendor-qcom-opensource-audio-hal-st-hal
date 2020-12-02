@@ -5005,6 +5005,12 @@ static int loaded_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
             }
             break;
         }
+
+        if (stc_ses->pending_client_start) {
+            ALOGV("%s: Session not resuming due to client c%d buffering",
+                __func__, stc_ses->sm_handle);
+            break;
+        }
         /* Fall through */
     case ST_SES_EV_START:
     case ST_SES_EV_RESTART:
@@ -5876,6 +5882,15 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
         /* Fall through */
     case ST_SES_EV_PAUSE:
         hw_ses->fptrs->stop_buffering(hw_ses);
+        /*
+         * The flag pending_client_start is used to prevent resume events from moving
+         * the session back to active state while the client is still buffering.
+         * Further detections while the client is buffering result in errors in the
+         * middleware state machine. When done buffering, the client can move the
+         * session back to active state when it calls start recognition.
+         */
+        if (stc_ses->detection_sent)
+            stc_ses->pending_client_start = true;
         STATE_TRANSITION(st_ses, active_state_fn);
         DISPATCH_EVENT(st_ses, *ev, status);
         if (st_ses->stdev->enable_debug_dumps &&
@@ -6295,6 +6310,7 @@ int st_session_start(st_session_t *stc_ses)
         hw_session_notifier_cancel(stc_ses->sm_handle, ST_SES_EV_DEFERRED_STOP);
         stc_ses->pending_stop = false;
     }
+    stc_ses->pending_client_start = false;
 
     DISPATCH_EVENT(st_ses, ev, status);
     if (!status) {
@@ -6343,6 +6359,7 @@ int st_session_restart(st_session_t *stc_ses)
         hw_session_notifier_cancel(stc_ses->sm_handle, ST_SES_EV_DEFERRED_STOP);
         stc_ses->pending_stop = false;
     }
+    stc_ses->pending_client_start = false;
 
     DISPATCH_EVENT(st_ses, ev, status);
     if (!status) {
