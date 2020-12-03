@@ -4337,7 +4337,25 @@ static void *aggregator_thread_loop(void *st_session)
         }
 
         if (!IS_SS_DETECTION_PENDING(det_status)) {
-            pthread_mutex_lock(&st_ses->lock);
+            /*
+             * The client could unload the sound model at this time, which would wait
+             * for ss_detections_lock as part of st_session_deinit() with st_session_lock
+             * held. Before waiting for ss_detections_lock, the exit_aggregator_loop flag
+             * will be set to true, so this thread can exit in that scenario and avoid
+             * deadlock.
+             */
+            do {
+                lock_status = pthread_mutex_trylock(&st_ses->lock);
+            } while (lock_status && !st_ses->exit_aggregator_loop);
+
+            if (st_ses->exit_aggregator_loop) {
+                ALOGV("%s:[%d] client unloaded, lock status %d",
+                    __func__, st_ses->sm_handle, lock_status);
+                if (!lock_status)
+                    pthread_mutex_unlock(&st_ses->lock);
+                goto exit;
+            }
+
             /*
              * If the client stops before 2nd stage finishes processing, or a
              * transition is in progress, the detection event should not be
