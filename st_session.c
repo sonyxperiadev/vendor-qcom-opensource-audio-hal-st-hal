@@ -4,7 +4,7 @@
  * user session. This state machine implements logic for handling all user
  * interactions, detectinos, SSR and Audio Concurencies.
  *
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -239,7 +239,8 @@ void hw_sess_cb(st_hw_sess_event_t *hw_event, void *cookie)
         if (st_ses->det_stc_ses->pending_stop) {
             ALOGV("%s:[%d] pending stop already queued, ignore event",
                 __func__, st_ses->sm_handle);
-        } else if (!st_ses->det_stc_ses->detection_sent) {
+        } else if (!lock_status && !st_ses->det_stc_ses->detection_sent &&
+                    st_ses->current_state == buffering_state_fn) {
                 ev.ev_id = ST_SES_EV_RESTART;
                 DISPATCH_EVENT(st_ses, ev, status);
                 ALOGV("%s:[%d] client callback hasn't been called, restart detection evt_id(%d)",
