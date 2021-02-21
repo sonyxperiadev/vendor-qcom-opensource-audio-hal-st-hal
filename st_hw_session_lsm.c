@@ -2,7 +2,7 @@
  *
  * This file implements the hw session functionality specific to LSM HW
  *
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -1414,7 +1414,7 @@ static int sound_trigger_set_device
                     p_ses->stdev->reset_backend &&
                     !is_hwmad_device) {
                     ALOGV("%s: conc capture supported, reset device controls (%x) = %s",
-                           __func__, p_ses->st_device, p_ses->st_device_name);
+                           __func__, p_ses->st_device, st_device_name);
                     audio_route_reset_and_update_path(p_ses->stdev->audio_route,
                         st_device_name);
                     if (0 < p_ses->stdev->dev_enable_cnt[ref_enable_idx])
