@@ -3,7 +3,7 @@
  * This file contains the API to load sound models with
  * DSP and start/stop detection of associated key phrases.
  *
- * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -215,6 +215,7 @@ struct sound_trigger_device {
     bool dedicated_sva_path;
     bool dedicated_headset_path;
     bool disable_hwmad;
+    bool is_buffering;
     st_platform_lpi_enable_t platform_lpi_enable;
 
     unsigned int rx_conc_max_st_ses;

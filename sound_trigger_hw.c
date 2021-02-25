@@ -273,6 +273,7 @@ static bool is_any_session_buffering()
         p_ses = node_to_item(p_ses_node, st_session_t, list_node);
         if (st_session_is_buffering(p_ses)) {
             ALOGD("%s:[%d] session is buffering", __func__, p_ses->sm_handle);
+            stdev->is_buffering = true;
             return true;
         }
     }
@@ -883,6 +884,7 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
                  * This is needed when the session goes to loaded state, then
                  * LPI/NLPI switch happens due to Rx event.
                  */
+                platform_stdev_reset_backend_cfg(stdev->platform);
                 platform_stdev_disable_stale_devices(stdev->platform);
                 list_for_each(p_ses_node, &stdev->sound_model_list) {
                     p_ses = node_to_item(p_ses_node, st_session_t, list_node);
@@ -940,6 +942,8 @@ static void handle_audio_concurrency(audio_event_type_t event_type,
                     st_session_pause(p_ses);
                 }
             }
+
+            platform_stdev_reset_backend_cfg(stdev->platform);
 
             list_for_each(p_ses_node, &stdev->sound_model_list) {
                 p_ses = node_to_item(p_ses_node, st_session_t, list_node);
@@ -1193,6 +1197,8 @@ static void handle_screen_status_change(audio_event_info_t* config)
             }
         }
 
+        platform_stdev_reset_backend_cfg(stdev->platform);
+
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
             if (p_ses && p_ses->exec_mode == ST_EXEC_MODE_ADSP) {
@@ -1244,6 +1250,8 @@ static void handle_battery_status_change(audio_event_info_t* config)
                 st_session_pause(p_ses);
             }
         }
+
+        platform_stdev_reset_backend_cfg(stdev->platform);
 
         list_for_each(p_ses_node, &stdev->sound_model_list) {
             p_ses = node_to_item(p_ses_node, st_session_t, list_node);
@@ -2982,6 +2990,7 @@ static int stdev_open(const hw_module_t* module, const char* name,
     stdev->lpi_enable = false;
     stdev->vad_enable = false;
     stdev->audio_ec_enabled = false;
+    stdev->is_buffering = false;
 
     pthread_mutex_init(&stdev->lock, (const pthread_mutexattr_t *) NULL);
     pthread_mutex_init(&stdev->ref_cnt_lock, (const pthread_mutexattr_t*)NULL);
