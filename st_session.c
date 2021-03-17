@@ -2948,9 +2948,19 @@ static int start_hw_session(st_proxy_session_t *st_ses, st_hw_session_t *hw_ses,
         hw_ses->lpi_enable = hw_ses->stdev->lpi_enable;
         hw_ses->barge_in_mode = hw_ses->stdev->barge_in_mode;
         do_unload = true;
-        platform_stdev_reset_backend_cfg(hw_ses->stdev->platform);
+        /*
+         * When LSM is in buffering state and if we remove the power
+         * cable it will change the battery status. So LPI mode switch from
+         * NLPI to LPI should happen as a part of handle_battery_status_change().
+         * As session is in buffering state,we can't directly change the LPI mode,
+         * so change the mode for subsequent detections, for that we have to reset
+         * backend when next detection is triggered.
+         */
+        if (hw_ses->stdev->is_buffering) {
+            platform_stdev_reset_backend_cfg(hw_ses->stdev->platform);
+            hw_ses->stdev->is_buffering = false;
+        }
     }
-
     /*
      * For gcs sessions, uid may be changed for new capture device,
      * in this case, sm must be dereg and reg again.
