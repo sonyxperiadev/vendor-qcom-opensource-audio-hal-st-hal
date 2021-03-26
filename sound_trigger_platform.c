@@ -2,7 +2,7 @@
  *
  * This file contains the platform specific functionality.
  *
- * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -4600,6 +4600,17 @@ int platform_stdev_get_device
 )
 {
     return get_st_device(platform, v_info, device, exec_mode, false);
+}
+
+int platform_stdev_get_device_for_cal
+(
+    void *platform,
+    struct st_vendor_info* v_info,
+    audio_devices_t device,
+    enum st_exec_mode exec_mode
+)
+{
+    return get_st_device(platform, v_info, device, exec_mode, true);
 }
 
 audio_devices_t platform_stdev_get_capture_device
