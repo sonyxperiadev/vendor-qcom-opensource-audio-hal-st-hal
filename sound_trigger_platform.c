@@ -129,6 +129,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_KW_START_TOLERANCE "kw_start_tolerance"
 #define ST_PARAM_KEY_KW_END_TOLERANCE "kw_end_tolerance"
 #define ST_PARAM_KEY_EXECUTION_TYPE "execution_type"
+#define ST_PARAM_KEY_SECOND_STAGE_SUPPORTED "second_stage_supported"
 #define ST_PARAM_KEY_EVENT_TIMESTAMP_MODE "event_timestamp_mode"
 #define ST_PARAM_KEY_BACKEND_PORT_NAME "backend_port_name"
 #define ST_PARAM_KEY_BACKEND_DAI_NAME "backend_dai_name"
@@ -2655,6 +2656,21 @@ static int platform_stdev_set_sm_config_params
             sm_info->exec_mode_cfg = EXEC_MODE_CFG_ARM;
         } else {
             ALOGE("%s: invalid exec type set: %s", __func__, str_value);
+        }
+    }
+
+    err = str_parms_get_str(parms, ST_PARAM_KEY_SECOND_STAGE_SUPPORTED,
+                            str_value, sizeof(str_value));
+    //By default set to true
+    sm_info->second_stage_supported = true;
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_SECOND_STAGE_SUPPORTED);
+        if (!strcmp(str_value, "true")) {
+           sm_info->second_stage_supported = true;
+        } else if (!strcmp(str_value, "false")) {
+           sm_info->second_stage_supported = false;
+        } else {
+            ALOGE("%s: invalid second stage support value set: %s", __func__, str_value);
         }
     }
 

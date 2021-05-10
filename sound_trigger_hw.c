@@ -2086,11 +2086,13 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
         goto exit_1;
     }
 
+    ALOGD("%s: second state detection %s",__func__,
+             st_session->vendor_uuid_info->second_stage_supported ? "supported" : "not supported");
     /*
      * Parse second stage sound models and populate the second stage list for
      * this session.
      */
-    if (sml_version == SML_MODEL_V3) {
+    if (sml_version == SML_MODEL_V3 && st_session->vendor_uuid_info->second_stage_supported) {
         status = check_and_configure_second_stage_models(st_session, sm_payload,
             num_models, phrase_sm->phrases[0].recognition_mode);
         if (status) {
