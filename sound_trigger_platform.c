@@ -87,6 +87,7 @@ typedef unsigned char __u8;
 #define ST_PARAM_KEY_CONCURRENT_CAPTURE "concurrent_capture"
 #define ST_PARAM_KEY_CONCURRENT_VOICE_CALL "concurrent_voice_call"
 #define ST_PARAM_KEY_CONCURRENT_VOIP_CALL "concurrent_voip_call"
+#define ST_PARAM_KEY_BEST_CHANNEL_INDEX "enable_best_channel_index"
 
 
 #define ST_PARAM_KEY_FIRMWARE_IMAGE "firmware_image"
@@ -423,6 +424,8 @@ struct platform_data {
 
     char vendor_config_path[MIXER_PATH_MAX_LENGTH];
     char xml_file_path[MIXER_PATH_MAX_LENGTH];
+
+    bool enable_best_channel_idx;
 };
 
 
@@ -1161,6 +1164,14 @@ static int platform_set_common_config
     if (err >= 0) {
         str_parms_del(parms, ST_PARAM_KEY_ENABLE_DEBUG_DUMPS);
         stdev->enable_debug_dumps =
+            !strncasecmp(str_value, "true", 4) ? true : false;
+    }
+
+    err = str_parms_get_str(parms, ST_PARAM_KEY_BEST_CHANNEL_INDEX,
+                            str_value, sizeof(str_value));
+    if (err >= 0) {
+        str_parms_del(parms, ST_PARAM_KEY_BEST_CHANNEL_INDEX);
+        my_data->enable_best_channel_idx =
             !strncasecmp(str_value, "true", 4) ? true : false;
     }
 
@@ -6505,4 +6516,11 @@ int platform_stdev_derive_mixer_ctl_from_backend
     strlcat(mixer_ctl_name, my_data->backend_dai_name, MIXER_PATH_MAX_LENGTH);
 
     return 0;
+}
+
+bool platform_is_best_channel_index_supported(void* platform)
+{
+    struct platform_data *my_data = (struct platform_data *)platform;
+
+    return my_data->enable_best_channel_idx;
 }
