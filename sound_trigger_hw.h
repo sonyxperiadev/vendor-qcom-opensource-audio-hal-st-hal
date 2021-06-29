@@ -217,6 +217,7 @@ struct sound_trigger_device {
     bool disable_hwmad;
     bool is_buffering;
     st_platform_lpi_enable_t platform_lpi_enable;
+    bool disable_stale;
 
     unsigned int rx_conc_max_st_ses;
     struct use_case_info *ape_pcm_use_cases;

@@ -5930,6 +5930,7 @@ void platform_stdev_disable_stale_devices
     sound_trigger_device_t *stdev = my_data->stdev;
     char st_device_name[DEVICE_NAME_MAX_SIZE] = {0};
 
+    bool dev_disabled = false;
     /*
      * There can be stale devices while exec_mode is NONE with the
      * below usecase:
@@ -5954,8 +5955,11 @@ void platform_stdev_disable_stale_devices
                                                   st_device_name);
                 ATRACE_END();
                 --(stdev->dev_enable_cnt[i]);
+                dev_disabled = true;
             }
         }
+        if (!dev_disabled)
+            stdev->disable_stale = true;
         pthread_mutex_unlock(&stdev->ref_cnt_lock);
     }
 }

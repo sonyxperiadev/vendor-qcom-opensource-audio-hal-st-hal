@@ -1111,6 +1111,10 @@ static void switch_device()
         st_session_disable_device(p_ses);
     }
     sthw_extn_lpma_notify_event(LPMA_EVENT_DISABLE_DEVICE);
+    if (stdev->disable_stale) {
+        platform_stdev_disable_stale_devices(stdev->platform);
+        stdev->disable_stale = false;
+    }
 
     list_for_each(p_ses_node, &stdev->sound_model_list) {
         p_ses = node_to_item(p_ses_node, st_session_t, list_node);
@@ -1955,6 +1959,7 @@ static int stdev_load_sound_model(const struct sound_trigger_hw_device *dev,
     st_module_type_t sm_version = ST_MODULE_TYPE_GMM;
     struct listnode *node = NULL, *tmp_node = NULL;
     struct st_arm_second_stage *st_sec_stage = NULL;
+    stdev->disable_stale = false;
 
     ALOGD("%s", __func__);
     ATRACE_BEGIN("sthal: stdev_load_sound_model");
@@ -2990,6 +2995,7 @@ static int stdev_open(const hw_module_t* module, const char* name,
     stdev->vad_enable = false;
     stdev->audio_ec_enabled = false;
     stdev->is_buffering = false;
+    stdev->disable_stale = false;
 
     pthread_mutex_init(&stdev->lock, (const pthread_mutexattr_t *) NULL);
     pthread_mutex_init(&stdev->ref_cnt_lock, (const pthread_mutexattr_t*)NULL);
