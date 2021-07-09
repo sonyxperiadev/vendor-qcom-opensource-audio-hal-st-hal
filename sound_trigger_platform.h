@@ -383,6 +383,7 @@ struct st_vendor_info {
     unsigned int avail_transit_ape_phrases;
     unsigned int avail_transit_ape_users;
     st_exec_mode_config_t exec_mode_cfg;
+    bool second_stage_supported;
     bool lpi_enable;
     bool vad_enable;
     struct lab_dam_cfg_payload lab_dam_cfg_payload;
