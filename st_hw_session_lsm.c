@@ -2192,8 +2192,10 @@ static int ape_reg_sm_params(st_hw_session_t* p_ses,
      * Custom config is mandatory for adsp multi-stage session,
      * Default config would be sent if not explicitly set from client applicaiton.
      */
-    if ((p_ses->custom_data_size && !disable_custom_config) ||
-        !list_empty(&p_ses->lsm_ss_cfg_list)) {
+    ALOGD("%s: second state detection %s",__func__,
+             p_ses->vendor_uuid_info->second_stage_supported ? "supported" : "not supported");
+    if (((p_ses->custom_data_size && !disable_custom_config) ||
+        !list_empty(&p_ses->lsm_ss_cfg_list)) && p_ses->vendor_uuid_info->second_stage_supported) {
         /* fill opaque data as custom params */
         cus_params = &param_info[param_count++];
         if (param_tag_tracker & PARAM_CUSTOM_CONFIG_BIT) {
