@@ -742,4 +742,8 @@ int platform_stdev_derive_mixer_ctl_from_backend
     char *mixer_ctl_name
 );
 
+bool platform_is_best_channel_index_supported
+(
+    void* platform
+);
 #endif /* SOUND_TRIGGER_PLATFORM_H */

@@ -1,6 +1,6 @@
 /* st_hw_session_lsm.h
  *
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -120,6 +120,7 @@ struct multi_sm_reg_sm {
 #define DET_EVENT_CONFIDENCE_LEVELS_BIT (1 << 0)
 #define DET_EVENT_KEYWORD_INDEX_BIT (1 << 1)
 #define DET_EVENT_TIMESTAMP_INFO_BIT (1 << 2)
+#define DET_EVENT_CHANNEL_INDEX_INFO_BIT (1 << 3)
 #define DET_EVENT_MULTI_MODEL_RESULT_INFO_BIT (1 << 4)
 
 struct lsm_param_smm_th_config {

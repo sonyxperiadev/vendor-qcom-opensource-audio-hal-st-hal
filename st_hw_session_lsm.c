@@ -532,7 +532,8 @@ static bool fill_lsm_det_event_type_params
    lsm_param_info_t *det_event_type_params,
    struct st_module_param_info *mparams,
    uint16_t stage_idx,
-   st_module_type_t version
+   st_module_type_t version,
+   st_hw_session_lsm_t *p_lsm_ses
 )
 {
     /* fill event type params */
@@ -544,6 +545,10 @@ static bool fill_lsm_det_event_type_params
         det_event_type->mode =
             DET_EVENT_CONFIDENCE_LEVELS_BIT | DET_EVENT_KEYWORD_INDEX_BIT |
             DET_EVENT_TIMESTAMP_INFO_BIT;
+
+    if ((version != ST_MODULE_TYPE_PDK5) &&
+        (platform_is_best_channel_index_supported(p_lsm_ses->common.stdev->platform)))
+        det_event_type->mode |= DET_EVENT_CHANNEL_INDEX_INFO_BIT;
 
     det_event_type_params->param_size = sizeof(*det_event_type);
     det_event_type_params->param_data = (unsigned char *)det_event_type;
@@ -1752,7 +1757,7 @@ static int ape_reg_sm(st_hw_session_t *p_ses, void *sm_data,
         stage_idx = LSM_STAGE_INDEX_FIRST + p_lsm_ses->num_stages - 1;
         if (fill_lsm_det_event_type_params(&det_event_type,
                     &param_info[0], mparams, stage_idx,
-                    p_ses->f_stage_version)) {
+                    p_ses->f_stage_version, p_lsm_ses)) {
             p_ses->is_generic_event = true;
 
             lsm_params.num_params = 1;

@@ -3158,6 +3158,7 @@ static int get_first_stage_detection_params(st_proxy_session_t *st_ses,
                     GENERIC_DET_EVENT_HEADER_SIZE);
                 hw_ses->kw_start_idx = result_info->keyword_start_idx_bytes;
                 hw_ses->kw_end_idx = result_info->keyword_end_idx_bytes;
+                hw_ses->channel_idx = result_info->best_channel_idx;
                 break;
 
             case KEY_ID_CONFIDENCE_LEVELS:
@@ -3189,6 +3190,11 @@ static int get_first_stage_detection_params(st_proxy_session_t *st_ses,
                     GENERIC_DET_EVENT_KW_START_OFFSET);
                 hw_ses->kw_end_idx = *((uint32_t *)payload_ptr +
                     GENERIC_DET_EVENT_KW_END_OFFSET);
+                break;
+
+            case KEY_ID_KEYWORD_CHANNEL_INDEX:
+                hw_ses->channel_idx = *((uint32_t *)payload_ptr +
+                     GENERIC_DET_EVENT_CHANNEL_IDX_OFFSET);
                 break;
 
             case KEY_ID_TIMESTAMP_INFO:
@@ -3236,8 +3242,8 @@ static int get_first_stage_detection_params(st_proxy_session_t *st_ses,
     kw_start_ms = convert_bytes_to_ms(hw_ses->kw_start_idx, &hw_ses->config);
     kw_end_ms = convert_bytes_to_ms(hw_ses->kw_end_idx, &hw_ses->config);
     ALOGD("%s:[%d] 1st stage kw_start = %dms, kw_end = %dms,"
-          "is_generic_event %d", __func__, st_ses->sm_handle,
-          kw_start_ms, kw_end_ms, hw_ses->is_generic_event);
+          "is_generic_event %d, channel_idx %d", __func__, st_ses->sm_handle,
+          kw_start_ms, kw_end_ms, hw_ses->is_generic_event, hw_ses->channel_idx);
 
     return 0;
 }
@@ -3341,7 +3347,7 @@ static int generate_legacy_st_phrase_recognition_event
  * params.
  */
 static size_t set_opaque_data_size(char *payload, size_t payload_size,
-    uint32_t version)
+    uint32_t version, void *platform)
 {
     size_t count_size = 0, opaque_size = 0;
     uint32_t key_id = 0, key_payload_size = 0;
@@ -3360,6 +3366,10 @@ static size_t set_opaque_data_size(char *payload, size_t payload_size,
                 opaque_size +=
                     sizeof(struct st_confidence_levels_info_v2);
             }
+
+            if (platform_is_best_channel_index_supported(platform))
+                opaque_size += sizeof(struct st_param_header) +
+                    sizeof(struct st_channel_index_info);
 
             opaque_size += sizeof(struct st_param_header) +
                 sizeof(struct st_keyword_indices_info);
@@ -3388,6 +3398,11 @@ static size_t set_opaque_data_size(char *payload, size_t payload_size,
                 sizeof(struct st_timestamp_info);
             break;
 
+        case KEY_ID_KEYWORD_CHANNEL_INDEX:
+            opaque_size += sizeof(struct st_param_header) +
+                sizeof(struct st_channel_index_info);
+            break;
+
         default:
             ALOGE("%s: Unsupported generic detection event key id", __func__);
             break;
@@ -3395,7 +3410,6 @@ static size_t set_opaque_data_size(char *payload, size_t payload_size,
         count_size += GENERIC_DET_EVENT_HEADER_SIZE + key_payload_size;
         payload += GENERIC_DET_EVENT_HEADER_SIZE + key_payload_size;
     }
-
     return opaque_size;
 }
 
@@ -3575,6 +3589,7 @@ static int parse_generic_event_and_pack_opaque_data(
     uint32_t timestamp_msw = 0, timestamp_lsw = 0;
     struct st_param_header *param_hdr = NULL;
     struct st_keyword_indices_info *kw_indices = NULL;
+    struct st_channel_index_info *chan_info = NULL;
     struct st_timestamp_info *timestamps = NULL;
     size_t count_size = 0;
     st_arm_second_stage_t *st_sec_stage = NULL;
@@ -3663,6 +3678,18 @@ static int parse_generic_event_and_pack_opaque_data(
                 timestamps->second_stage_det_event_time =
                     st_ses->hw_ses_current->second_stage_det_event_time;
             opaque_data += sizeof(struct st_timestamp_info);
+
+            if (platform_is_best_channel_index_supported(st_ses->stdev->platform)) {
+                /* set best channel idx */
+                param_hdr = (struct st_param_header *)opaque_data;
+                param_hdr->key_id = ST_PARAM_KEY_CHANNEL_INDEX;
+                param_hdr->payload_size = sizeof(struct st_channel_index_info);
+                opaque_data += sizeof(struct st_param_header);
+                chan_info = (struct st_channel_index_info *)opaque_data;
+                chan_info->version = 0x1;
+                chan_info->channel_index = result_info->best_channel_idx;
+                opaque_data += sizeof(struct st_channel_index_info);
+            }
             break;
 
         case KEY_ID_CONFIDENCE_LEVELS:
@@ -3734,6 +3761,18 @@ static int parse_generic_event_and_pack_opaque_data(
                 timestamps->second_stage_det_event_time =
                     st_ses->hw_ses_current->second_stage_det_event_time;
             opaque_data += sizeof(struct st_timestamp_info);
+            break;
+
+        case KEY_ID_KEYWORD_CHANNEL_INDEX:
+            /* Pack the opaque data keyword indices structure */
+            param_hdr = (struct st_param_header *)opaque_data;
+            param_hdr->key_id = ST_PARAM_KEY_CHANNEL_INDEX;
+            param_hdr->payload_size = sizeof(struct st_channel_index_info);
+            opaque_data += sizeof(struct st_param_header);
+            chan_info = (struct st_channel_index_info *)opaque_data;
+            chan_info->version = 0x1;
+            chan_info->channel_index = *((uint32_t *)payload + 3);
+            opaque_data += sizeof(struct st_channel_index_info);
             break;
 
         default:
@@ -3814,7 +3853,7 @@ int process_detection_event_keyphrase_v2(
 
     if (st_ses->vendor_uuid_info->is_qcva_uuid)
         opaque_size = set_opaque_data_size(payload, payload_size,
-            stc_ses->conf_levels_intf_version);
+            stc_ses->conf_levels_intf_version, stc_ses->stdev->platform);
     else
         opaque_size = payload_size;
 

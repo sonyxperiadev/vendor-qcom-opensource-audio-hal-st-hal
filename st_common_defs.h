@@ -1,6 +1,6 @@
 /* st_common_defs.h
  *
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -109,11 +109,13 @@ do {\
 #define LSM_NON_GENERIC_USER_LEVEL_OFFSET (1)
 #define GENERIC_DET_EVENT_KW_START_OFFSET (3)
 #define GENERIC_DET_EVENT_KW_END_OFFSET (4)
+#define GENERIC_DET_EVENT_CHANNEL_IDX_OFFSET (3)
 #define CONF_LEVELS_INTF_VERSION_0002 (0x02)
 
 #define KEY_ID_CONFIDENCE_LEVELS (0x2000)
 #define KEY_ID_KEYWORD_POSITION_STATS (0x2001)
 #define KEY_ID_TIMESTAMP_INFO (0x2002)
+#define KEY_ID_KEYWORD_CHANNEL_INDEX (0x2003)
 #define KEY_ID_MULTI_MODEL_RESULT_INFO (0x2004)
 
 #define DLSYM(handle, ptr, symbol, err) \
