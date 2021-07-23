@@ -5,7 +5,7 @@
  * structures will also be used by the client applications for
  * SVA.
  *
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -50,6 +50,7 @@ enum st_param_key {
     ST_PARAM_KEY_KEYWORD_INDICES,
     ST_PARAM_KEY_TIMESTAMP,
     ST_PARAM_KEY_DETECTION_PERF_MODE,
+    ST_PARAM_KEY_CHANNEL_INDEX,
 };
 
 struct st_param_header
@@ -137,5 +138,11 @@ struct st_det_perf_mode_info
 {
     uint32_t version; /* value: 0x01 */
     uint8_t mode; /* 0 -Low Power, 1 -High performance */
+}__packed;
+
+struct st_channel_index_info
+{
+    uint32_t version; /* value: 0x01 */
+    uint32_t channel_index; /* range: {0..15} */
 }__packed;
 #endif /* ST_OPAQUE_H */
