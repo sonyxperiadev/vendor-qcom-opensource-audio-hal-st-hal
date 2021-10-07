@@ -5996,7 +5996,6 @@ static int buffering_state_fn(st_proxy_session_t *st_ses, st_session_ev_t *ev)
     case ST_SES_EV_RESTART:
         ALOGD("%s:[c%d-%d] handle event START/RESTART", __func__,
             stc_ses->sm_handle, st_ses->sm_handle);
-
         if (stc_ses != st_ses->det_stc_ses) {
             ALOGD("%s: c%d buffering, delay c%d start", __func__,
                 st_ses->det_stc_ses->sm_handle, stc_ses->sm_handle);
@@ -6379,6 +6378,15 @@ int st_session_start(st_session_t *stc_ses)
         stc_ses->pending_stop = false;
     }
     stc_ses->pending_client_start = false;
+    /*
+     * detection_sent flag is set to false when successful detection
+     * happens and it will be set to true once client is notified of it.
+     * It remains true till the next detection happens. So make it false
+     * here, before we call into start/restart for next detection.
+     * Setting this flag false helps when we post pause event during
+     * buffering to pause other clients due to backend config change.
+     */
+     stc_ses->detection_sent = false;
 
     DISPATCH_EVENT(st_ses, ev, status);
     if (!status) {
@@ -6428,6 +6436,15 @@ int st_session_restart(st_session_t *stc_ses)
         stc_ses->pending_stop = false;
     }
     stc_ses->pending_client_start = false;
+    /*
+     * detection_sent flag is set to false when successful detection
+     * happens and it will be set to true once client is notified of it.
+     * It remains true till the next detection happens. So make it false
+     * here, before we call into start/restart for next detection.
+     * Setting this flag false helps when we post pause event during
+     * buffering to pause other clients due to backend config change.
+     */
+    stc_ses->detection_sent = false;
 
     DISPATCH_EVENT(st_ses, ev, status);
     if (!status) {
