@@ -3664,7 +3664,7 @@ static void platform_stdev_send_adm_app_type_cfg(void *platform)
     struct mixer_ctl *ctl;
     struct listnode *p_node, *temp_node;
     struct adm_cfg_info *cfg_info;;
-    int app_type_cfg[ST_MAX_LENGTH_MIXER_CONTROL] = {-1};
+    long app_type_cfg[ST_MAX_LENGTH_MIXER_CONTROL] = {-1};
     int i, len = 0, num_app_types = 0;
     bool update;
 
@@ -3726,7 +3726,7 @@ static void platform_stdev_send_adm_app_type_cfg(void *platform)
     struct mixer_ctl *ctl;
     struct listnode *p_node, *temp_node;
     struct adm_cfg_info *cfg_info;;
-    int app_type_cfg[ST_MAX_LENGTH_MIXER_CONTROL] = {-1};
+    long app_type_cfg[ST_MAX_LENGTH_MIXER_CONTROL] = {-1};
     int i, len = 0, num_app_types = 0;
     bool update;
 
@@ -5888,7 +5888,7 @@ int platform_stdev_send_stream_app_type_cfg
     struct platform_data *my_data = (struct platform_data *)platform;
     sound_trigger_device_t *stdev = my_data->stdev;
     char mixer_ctl_name[ST_MAX_LENGTH_MIXER_CONTROL];
-    int app_type_cfg[ST_MAX_LENGTH_MIXER_CONTROL] = {0};
+    long app_type_cfg[ST_MAX_LENGTH_MIXER_CONTROL] = {0};
     int len = 0;
     struct mixer_ctl *ctl;
     int status = 0, acdb_id;
