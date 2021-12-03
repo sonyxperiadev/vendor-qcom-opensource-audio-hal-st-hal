@@ -52,14 +52,9 @@
 
 #define AUDIO_HAL_NAME_PREFIX "audio.primary"
 
-#if LINUX_ENABLED
- #ifdef __LP64__
-    #define AUDIO_HAL_LIBRARY_PATH1 "/usr/lib64"
-    #define AUDIO_HAL_LIBRARY_PATH2 AUDIO_HAL_LIBRARY_PATH1
- #else
-    #define AUDIO_HAL_LIBRARY_PATH1 "/usr/lib"
-    #define AUDIO_HAL_LIBRARY_PATH2 AUDIO_HAL_LIBRARY_PATH1
- #endif
+#ifdef HAL_LIBRARY_PATH
+    #define AUDIO_HAL_LIBRARY_PATH1 HAL_LIBRARY_PATH
+    #define AUDIO_HAL_LIBRARY_PATH2 HAL_LIBRARY_PATH
 #else
  #ifdef __LP64__
     #define AUDIO_HAL_LIBRARY_PATH1 "/vendor/lib64/hw"
