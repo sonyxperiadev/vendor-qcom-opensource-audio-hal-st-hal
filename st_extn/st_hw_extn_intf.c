@@ -3,7 +3,7 @@
  * This library contains the API that are add ons to
  * sound trigger interface.
  *
- * Copyright (c) 2016-2017, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2017, 2021 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -120,7 +120,8 @@ static int sthw_extn_set_parameters(const struct sound_trigger_hw_device *dev,
         if (err >= 0) {
             str_parms_del(parms, QSTHW_PARAMETER_EC_REF_DEVICE);
             ALOGV("%s: ec ref device 0x%x", __func__, ec_ref_dev);
-            stdev->ec_ref_dev = ec_ref_dev;
+            platform_stdev_update_device_list(ec_ref_dev, "",
+                &stdev->ec_ref_dev_list, true);
         }
 
         goto exit;
