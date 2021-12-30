@@ -2956,7 +2956,11 @@ static int stdev_open(const hw_module_t* module, const char* name,
     }
 
     stdev->device.common.tag = HARDWARE_DEVICE_TAG;
+#ifdef ST_DEVICE_API_VERSION_1_0
+    stdev->device.common.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_0;
+#else
     stdev->device.common.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_3;
+#endif
     stdev->device.common.module = (struct hw_module_t *) module;
     stdev->device.common.close = stdev_close;
     stdev->device.get_properties = stdev_get_properties;
@@ -3013,11 +3017,14 @@ static int stdev_open(const hw_module_t* module, const char* name,
     stdev_ref_cnt++;
     pthread_mutex_unlock(&stdev_init_lock);
 
+#ifdef ST_DEVICE_API_VERSION_1_0
+    hw_properties_extended.header.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_0;
+#else
     get_base_properties(stdev);
     hw_properties_extended.header.size = sizeof(struct sound_trigger_properties_extended_1_3);
     hw_properties_extended.audio_capabilities = 0;
     hw_properties_extended.header.version = SOUND_TRIGGER_DEVICE_API_VERSION_1_3;
-
+#endif
     ATRACE_END();
     ALOGD("%s: Exit ", __func__);
     return 0;
