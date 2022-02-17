@@ -2,7 +2,8 @@
  *
  * This file implements the hw session functionality specific to LSM HW
  *
- * Copyright (c) 2016-2022, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
