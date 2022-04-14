@@ -49,6 +49,10 @@ if SOUND_TRIGGER_DEVICE_API_VERSION_1_0
 AM_CFLAGS += -DST_DEVICE_API_VERSION_1_0
 endif
 
+if SOUND_TRIGGER_APE
+AM_CFLAGS += -DST_APE
+endif
+
 lib_includedir = $(includedir)/sound_trigger
 lib_include_HEADERS = sound_trigger_prop_intf.h sound_trigger_hw.h
 
