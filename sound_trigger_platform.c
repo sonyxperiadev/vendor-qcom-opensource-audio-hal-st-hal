@@ -3344,7 +3344,11 @@ static void query_stdev_platform(struct platform_data *my_data,
         get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME_WCD9340,
             my_data->vendor_config_path);
         strlcpy(mixer_path_xml, my_data->xml_file_path, MIXER_PATH_MAX_LENGTH);
+#ifdef ST_APE
+	my_data->stdev->is_gcs = false;
+#else
         my_data->stdev->is_gcs = true;
+#endif
     } else if (strstr(snd_card_name, "bg")) {
         get_xml_file_path(my_data->xml_file_path, MIXER_PATH_FILE_NAME_BG,
             my_data->vendor_config_path);
