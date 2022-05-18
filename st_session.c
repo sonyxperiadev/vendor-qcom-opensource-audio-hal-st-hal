@@ -2524,7 +2524,8 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
                 }
                 if (param_hdr->payload_size != conf_levels_payload_size) {
                     ALOGE("%s: Conf level format error, exiting", __func__);
-                    return -EINVAL;
+                    status = -EINVAL;
+                    goto ERR_EXIT;
                 }
                 status = parse_rc_config_key_conf_levels(stc_ses, st_hw_ses,
                     opaque_ptr, &conf_levels, &num_conf_levels);
@@ -2535,7 +2536,8 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
                 if (status) {
                     ALOGE("%s: parsing conf levels failed(status=%d)",
                         __func__, status);
-                    return -EINVAL;
+                    status = -EINVAL;
+                    goto ERR_EXIT;
                 }
                 break;
             case ST_PARAM_KEY_HISTORY_BUFFER_CONFIG:
@@ -2543,7 +2545,8 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
                     sizeof(struct st_hist_buffer_info)) {
                     ALOGE("%s: History buffer config format error, exiting",
                           __func__);
-                    return -EINVAL;
+                    status = -EINVAL;
+                    goto ERR_EXIT;
                 }
                 hist_buf = (struct st_hist_buffer_info *)(opaque_ptr +
                     sizeof(struct st_param_header));
@@ -2563,7 +2566,8 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
                 if (param_hdr->payload_size !=
                     sizeof(struct st_det_perf_mode_info)) {
                     ALOGE("%s: Opaque data format error, exiting", __func__);
-                    return -EINVAL;
+                    status = -EINVAL;
+                    goto ERR_EXIT;
                 }
                 det_perf_mode = (struct st_det_perf_mode_info *)(opaque_ptr +
                     sizeof(struct st_param_header));
@@ -2576,7 +2580,8 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
                 break;
             default:
                 ALOGE("%s: Unsupported opaque data key id, exiting", __func__);
-                return -EINVAL;
+                status = -EINVAL;
+                goto ERR_EXIT;
             }
         }
     } else if (stc_ses->sm_type == SOUND_MODEL_TYPE_KEYPHRASE) {
@@ -2610,7 +2615,8 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
         stc_ses->sm_info.model_id);
     if (!sthw_cfg) {
         ALOGE("%s: Unexpected, no matching sthw_cfg", __func__);
-        return -EINVAL;
+        status = -EINVAL;
+        goto ERR_EXIT;
     }
 
     if (stc_ses->f_stage_version == ST_MODULE_TYPE_GMM) {
@@ -2634,7 +2640,8 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
             if (num_conf_levels != stc_ses->sm_info.cf_levels_size) {
                 ALOGE("%s: Unexpected, client cf levels %d != sm_info cf levels %d",
                     __func__, num_conf_levels, stc_ses->sm_info.cf_levels_size);
-                return -EINVAL;
+                status = -EINVAL;
+                goto ERR_EXIT;
             }
 
             /*
@@ -2778,6 +2785,12 @@ static int update_hw_config_on_start(st_session_t *stc_ses,
     ALOGD("%s:[%d] lab enabled %d", __func__, st_ses->sm_handle,
           st_ses->lab_enabled);
 
+    return status;
+
+ERR_EXIT:
+    if (conf_levels) {
+        free(conf_levels);
+    }
     return status;
 }
 

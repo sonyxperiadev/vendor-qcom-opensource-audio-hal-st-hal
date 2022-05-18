@@ -2044,7 +2044,8 @@ static int platform_stdev_set_module_params
     if (my_data->xml_version < PLATFORM_XML_VERSION_0x0106) {
         ALOGE("%s: Unexpected platform xml version 0x%x, exiting", __func__,
             my_data->xml_version);
-        return -EINVAL;
+        ret = -EINVAL;
+        goto err_exit;
     }
 
     /* Get the last added vendor_info node */
