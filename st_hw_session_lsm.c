@@ -1343,6 +1343,7 @@ static int allocate_lab_buffers_ape(st_hw_session_lsm_t* p_lsm_ses)
     pthread_create(&p_lsm_ses->buffer_thread, &attr,
         buffer_thread_loop, p_lsm_ses);
 
+    pthread_attr_destroy(&attr);
     return status;
 
 error_exit:
