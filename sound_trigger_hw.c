@@ -2701,7 +2701,12 @@ static int stdev_close(hw_device_t *device)
     ATRACE_BEGIN("sthal: stdev_close");
 
     pthread_mutex_lock(&stdev_init_lock);
-    if (!st_device || (--stdev_ref_cnt != 0)) {
+    if (!st_device) {
+        goto exit;
+    }
+    if (--stdev_ref_cnt != 0) {
+        ALOGD("%s: Exit device=%p cnt=%d ", __func__, st_device,
+            stdev_ref_cnt);
         goto exit;
     }
 
@@ -2746,8 +2751,6 @@ static int stdev_close(hw_device_t *device)
 exit:
     pthread_mutex_unlock(&stdev_init_lock);
     ATRACE_END();
-    ALOGD("%s: Exit device=%p cnt=%d ", __func__, st_device,
-        stdev_ref_cnt);
     return 0;
 }
 
