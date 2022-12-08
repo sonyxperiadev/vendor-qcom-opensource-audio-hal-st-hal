@@ -4,6 +4,11 @@
  *
  * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
  *
+ * Changes from Qualcomm Innovation Center are provided under the following license:
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause-Clear
+ *
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
@@ -4072,6 +4077,14 @@ void *platform_stdev_init(sound_trigger_device_t *stdev)
     struct listnode *v_node, *temp_node;
     struct st_vendor_info* v_info;
     char dev_name[256];
+    struct st_gcs_params *gcs_info = NULL;
+    struct st_arm_ss_params *arm_params = NULL;
+    struct adm_cfg_info *cfg_info = NULL;
+    struct st_lsm_params *lsm_info = NULL;
+    struct st_module_params *module_info = NULL;
+    struct listnode *module_node = NULL, *lsm_node = NULL, *adm_node = NULL;
+    struct listnode *gcs_node = NULL, *arm_node = NULL, *temp_node2 = NULL;
+    struct listnode *temp_node1 = NULL, *temp_node4 = NULL;
 
     ALOGI("%s: Enter", __func__);
     my_data = calloc(1, sizeof(struct platform_data));
@@ -4307,9 +4320,43 @@ cleanup:
     }
     list_for_each_safe(v_node, temp_node, &stdev->vendor_uuid_list) {
         v_info = node_to_item(v_node, struct st_vendor_info, list_node);
+
+        list_for_each_safe(gcs_node, temp_node1, &v_info->gcs_usecase_list) {
+            gcs_info = node_to_item(gcs_node, struct st_gcs_params, list_node);
+            list_remove(gcs_node);
+            free(gcs_info);
+        }
+
+        list_for_each_safe(arm_node, temp_node2, &v_info->arm_ss_usecase_list) {
+                arm_params = node_to_item(arm_node, struct st_arm_ss_params, list_node);
+                list_remove(arm_node);
+                free(arm_params);
+        }
+
+        list_for_each_safe(lsm_node, temp_node1, &v_info->lsm_usecase_list) {
+
+                lsm_info = node_to_item(lsm_node, struct st_lsm_params, list_node);
+                list_remove(lsm_node);
+                list_for_each_safe(module_node, temp_node2,
+                    &lsm_info->module_params_list) {
+                    module_info = node_to_item(module_node, struct st_module_params,
+                        list_node);
+                    list_remove(module_node);
+                    free(module_info);
+                }
+                free(lsm_info);
+        }
+
         list_remove(v_node);
         free(v_info);
     }
+
+    list_for_each_safe(adm_node, temp_node4, &stdev->adm_cfg_list) {
+        cfg_info = node_to_item(adm_node, struct  adm_cfg_info, list_node);
+        list_remove(adm_node);
+        free(cfg_info);
+    }
+
     if (my_data->hwdep_fd >= 0) {
         close(my_data->hwdep_fd);
     }
