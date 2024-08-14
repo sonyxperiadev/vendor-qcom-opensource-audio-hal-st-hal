@@ -1,3 +1,4 @@
+ifneq ($(TARGET_USES_AUDIOREACH), true)
 ifeq ($(strip $(BOARD_SUPPORTS_OPENSOURCE_STHAL)),true)
 
 LOCAL_PATH := $(call my-dir)
@@ -135,4 +136,5 @@ include $(BUILD_SHARED_LIBRARY)
 #
 #include $(BUILD_EXECUTABLE)
 
+endif
 endif
