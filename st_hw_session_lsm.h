@@ -30,7 +30,11 @@
 #include <pthread.h>
 #include <tinyalsa/asoundlib.h>
 #include <audio_route/audio_route.h>
+#ifdef _TARGET_KERNEL_VERSION_510_
+#include <legacy/sound/lsm_params.h>
+#else
 #include <sound/lsm_params.h>
+#endif
 #include <sound/asound.h>
 
 #include "sound_trigger_platform.h"
