@@ -71,9 +71,15 @@ typedef unsigned char __u8;
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sound/asound.h>
+#ifdef _TARGET_KERNEL_VERSION_510_
+#include <legacy/sound/msmcal-hwdep.h>
+#include <legacy/linux/msm_audio_calibration.h> /* for AUDIO_CORE_METAINFO_CAL_TYPE; audio_cal_info_metainfo */
+#include <legacy/sound/lsm_params.h>
+#else
 #include <sound/msmcal-hwdep.h>
 #include <linux/msm_audio_calibration.h> /* for AUDIO_CORE_METAINFO_CAL_TYPE; audio_cal_info_metainfo */
 #include <sound/lsm_params.h>
+#endif
 #include "sound_trigger_platform.h"
 #include "sound_trigger_hw.h"
 #include "st_hw_session_gcs.h" /* for gcs_init/deinit */
